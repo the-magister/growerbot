@@ -6,13 +6,7 @@
 #include <Streaming.h>
 #include <RCSwitch.h>
 
-// Find the three values for your switch by using the Advanced Receieve sketch
-// Supplied with the RCSwitch library
-
-#define PUMPBITLENGTH 24    // And the bitlength is 24
-#define PUMPPULSELENGTH 166 // Amd the pulse length in microseconds is 166
-
-class Sensor {
+class BIOSDigitalSoilMeter {
   public:
     void begin(char name[], int sensorAddress, byte minMoist=6, byte maxMoist=11);
                
@@ -57,42 +51,42 @@ class Sensor {
 
  };
  
- class Pump {
-  public:
-    void begin(char name[], int pumpAddress);
+ class EtekcityOutlet {
+   public:
+    void begin(char name[], int onCode, int offCode);
                
-    // store current pump state
+    // store current outlet state
     boolean isOn;
 
-    // turn pump on and off
+    // turn outlet on and off
     void turnOn();
     void turnOff();
 
-    // look for manual pump control (to stay in sync).
+    // look for manual outlet control (to stay in sync).
     void readPump();
     
-    // show pump parameters
+    // show outlet parameters
     void print();
     
-    // store pump name
+    // store outlet name
     char name[20];
 
   private:
 
-    // store the pump address code
-    int pumpAddress;
+    // store the outlet address codes
+    int onCode, offCode;
 
-     // stores time pump was turned on
+     // stores time outlet was turned on
     unsigned long onTime;
 
-    // toggle pump
+    // toggle outlet
     void toggle();
     
-    // handles the sensor data packet
+    // handles the outlet data packet
     int decodeAddress(unsigned long data);
    
-    // stores the last time we got a manual pump change signal
-    unsigned long lastPumpRead;
+    // stores the last time we got a manual outlet change signal
+    unsigned long lastOutletRead;
 
  };
 

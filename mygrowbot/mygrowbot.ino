@@ -19,14 +19,14 @@ DS3231 rtc;
 
 // how many sensors are we reading?
 const int nSensors = 3;
-Sensor sensor[nSensors];
+BIOSDigitalSoilMeter sensor[nSensors];
 
 // how many pumps are we controlling?
 const int nPumps = 4;
-Pump pump[nPumps];
+EtekcityOutlet pump[nPumps];
 
 // what pumps water which sensors?
-const boolean ps[nSensors] = {0, 1, 2};
+const boolean ps[nSensors] = {0, 0, 0};
 
 void setup() {
   Serial.begin(115200);
@@ -50,14 +50,13 @@ void setup() {
   // Radio module
   radio.enableReceive(0);  // Receiver on interrupt 0 => that is pin D2
   radio.enableTransmit(10); // Transmitter on pin D10
-  radio.setPulseLength(PUMPPULSELENGTH);  // set the pulse length to talk to the pumps
 
   // pumps
   Serial << F("Pumps:") << endl;
-  pump[0].begin("Pump 1", 2048);
-  pump[1].begin("Pump 2", 2049);
-  pump[2].begin("Pump 3", 2050);
-  pump[3].begin("Pump 4", 2051);
+  pump[0].begin("Pump 1", 2048, 3048);
+  pump[1].begin("Pump 2", 2049, 3049);
+  pump[2].begin("Pump 3", 2050, 3050);
+  pump[3].begin("Pump 4", 2051, 3051);
 
   // sensors
   Serial << F("Sensors:") << endl;
@@ -192,6 +191,7 @@ void wateringTime() {
       } else if ( tooDry ) {
         //       Serial << "too dry" << endl;
         pump[p].turnOn();
+        delay(1000); // power draw on the pumps is high at startup.  stagger them.
       }
     }
 
