@@ -54,7 +54,8 @@ boolean BIOSDigitalSoilMeter::tooWet(){
   return( this->currMoist > this->maxMoist );
 }
 boolean BIOSDigitalSoilMeter::justRight() {
-  return( !this->tooDry() && !this->tooWet() );
+  // just before reporting "too wet"
+  return( this->currMoist+1 == this->maxMoist );
 }
 
 // see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/

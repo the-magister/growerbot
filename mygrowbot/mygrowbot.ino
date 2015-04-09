@@ -28,22 +28,31 @@ EtekcityOutlet pump[nPumps];
 // what pumps water which sensors?
 const boolean ps[nSensors] = {0, 0, 0};
 
+// use LED to indicate status
+// solid: one or more sensors is reporting too dry
+// blinking: watering in progress
+// SOS: a sensor is acting whacky
+#define LED 13
+
 void setup() {
   Serial.begin(115200);
 
   Serial << F("Startup.") << endl;
   Serial.setTimeout(10);
-  
+
+  // LED pin
+  pinMode(LED, OUTPUT);
+
   // RTC
   Wire.begin();
-  
-  // Timers
-//  setTime(21, 0, 0, 27, 4, 11);
-//  Alarm.alarmRepeat(21, 0, 1, WateringTime);
 
-  // 9pm. when hour, min, sec match. 
+  // Timers
+  //  setTime(21, 0, 0, 27, 4, 11);
+  //  Alarm.alarmRepeat(21, 0, 1, WateringTime);
+
+  // 9pm. when hour, min, sec match.
   rtc.setClockMode(false); // 24 time.
-  rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false); 
+  rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
   rtc.turnOnAlarm(1);
   Serial << F("Watering alarm enabled? ") << rtc.checkAlarmEnabled(1) << endl;
 
@@ -71,6 +80,7 @@ void setup() {
   }
 
   Serial << F("Startup complete.") << endl;
+
 }
 
 void loop() {
@@ -88,13 +98,25 @@ void loop() {
 
   // check for time update from Serial
   getTimeUpdate();
-  
+
+  // monitor for too dry
+  boolean tooDry = false;
+  for (int s = 0; s < nSensors; s++ ) {
+    if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
+  }
+  if ( tooDry ) { 
+    printTime();
+    Serial << F(" BAD! one or more sensors reports 'too dry'") << endl;
+    ledTooDry();
+    delay(1000);
+  }
+
   // check alarm for Watering time
-  if( rtc.checkIfAlarm(1) ) {
+  if ( rtc.checkIfAlarm(1) ) {
     wateringTime();
   }
-  
- }
+
+}
 
 void getTimeUpdate() {
   while (Serial.available() > 0) {
@@ -107,15 +129,15 @@ void getTimeUpdate() {
     int da = Serial.parseInt();
     int mo = Serial.parseInt();
     int ye = Serial.parseInt();
-    while( Serial.read() > -1); // dump anything trailing.
-    
+    while ( Serial.read() > -1); // dump anything trailing.
+
     Serial << F("Time update received. Format: hr, min, sec, day, month, year\\n") << endl;
-    rtc.setHour(constrain(hr,0,24));
-    rtc.setMinute(constrain(mi,0,60));
-    rtc.setSecond(constrain(se,0,60));
-    rtc.setDate(constrain(da,1,31));
-    rtc.setMonth(constrain(mo,1,12));
-    rtc.setYear(constrain(ye,0,99));
+    rtc.setHour(constrain(hr, 0, 24));
+    rtc.setMinute(constrain(mi, 0, 60));
+    rtc.setSecond(constrain(se, 0, 60));
+    rtc.setDate(constrain(da, 1, 31));
+    rtc.setMonth(constrain(mo, 1, 12));
+    rtc.setYear(constrain(ye, 0, 99));
     Serial << F("Time set to: ");
     printTime();
     Serial << endl;
@@ -160,6 +182,9 @@ void wateringTime() {
     getSensorData();
     notePumpManualControl();
 
+    // indicate watering cycle
+    ledWatering();
+
     // work through each pump
     for (int p = 0; p < nPumps; p++ ) {
 
@@ -173,19 +198,24 @@ void wateringTime() {
 
       boolean tooDry = false;
       boolean tooWet = false;
-
+      boolean justRight = true;
       // check each sensor assigned to this pump
       for (int s = 0; s < nSensors; s++ ) {
         if ( ps[s] == p ) { // if this pump waters this sensor
           if ( sensor[s].tooDry() ) tooDry |= true;
           if ( sensor[s].tooWet() ) tooWet |= true;
+          if ( !sensor[s].justRight() ) justRight &= false; // hard to get them all just right with one pump
         }
       }
       //      Serial << "pump:" << p << " on?" << pump[p].isOn << " tooDry?" << tooDry << " tooWet?" << tooWet << endl;
 
       // examine the results, and decide what to do.
-      // if the pump is off, and the sensors read too dry (but not too wet), turn on the pump
-      if ( tooWet || !tooDry ) {
+      //
+      // generally, we want to water infrequently, but heavily if we do.
+      // so, only turn on the pumps if the soil reads "too dry", but then run the pumps until we (just) hit "too wet"
+
+      //      if ( tooWet || !tooDry ) {
+      if ( tooWet || justRight ) {
         //        Serial << "too wet or not too dry" << endl;
         pump[p].turnOff();
       } else if ( tooDry ) {
@@ -199,25 +229,116 @@ void wateringTime() {
     keepWatering = false;
     for (int p = 0; p < nPumps; p++ ) keepWatering |= pump[p].isOn;
 
-    delay(1000);
+//    delay(1000);
   }
 
   Serial << F("All pumps off.  Watering cycle complete.") << endl;
+
+  // see where we ended up.
+  boolean tooDry = false;
+  for (int s = 0; s < nSensors; s++ ) {
+    if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
+  }
+  if ( tooDry ) {
+    Serial << F("BAD: one or more sensors reports 'too dry' after watering.") << endl;
+  } else {
+    Serial << F("GOOD: no sensors report 'too dry' after watering.") << endl;
+  }
   printSensors();
   Serial << F("Total watering time: ") << (millis() - now) / 1000 / 60 << F(" minutes.") << endl;
 
 }
 
 void printTime() {
-  static bool h12=false;
-  static bool PM=false;
-  static bool Century=false;
-  
-  Serial << rtc.getHour(h12,PM) << F(":") << rtc.getMinute() << F(":") << rtc.getSecond() << F(" ");
+  static bool h12 = false;
+  static bool PM = false;
+  static bool Century = false;
+
+  Serial << rtc.getHour(h12, PM) << F(":") << rtc.getMinute() << F(":") << rtc.getSecond() << F(" ");
   Serial << rtc.getMonth(Century) << F("/") << rtc.getDate() << F("/") << rtc.getYear();
 }
 
+// some morse code to indicate what we're doing
+void ledTooDry() {
+  ledMorse('d');
+  ledMorse('.');  
+}
 
+void ledWatering() {
+  ledMorse('w');
+  ledMorse('.');
+}
+
+void ledSOS() {
+  ledMorse('s');
+  ledMorse('o');
+  ledMorse('s');
+  ledMorse('.');
+}
+
+void ledMorse(char letter) {
+  const int dot = 200;
+  const int dash = 3 * dot;
+  const int pauseSpace = dot;
+  const int letterSpace = dash;
+  const int wordSpace = 7 * dot;
+
+  switch (letter) {
+    case 's':  // "S".  three dots.
+      for (int i = 0; i < 3; i++) {
+        digitalWrite(LED, HIGH);
+        delay(dot);
+        digitalWrite(LED, LOW);
+        delay(pauseSpace);
+      }
+      delay(letterSpace);
+      break;
+    case 'o': // "O".  three dashes.
+      for (int i = 0; i < 3; i++) {
+        digitalWrite(LED, HIGH);
+        delay(dash);
+        digitalWrite(LED, LOW);
+        delay(pauseSpace);
+      }
+      delay(letterSpace);
+
+      break;
+    case 'w': // "W".  dot dash dash
+      digitalWrite(LED, HIGH);
+      delay(dot);
+      digitalWrite(LED, LOW);
+      delay(pauseSpace);
+      for (int i = 0; i < 2; i++) {
+        digitalWrite(LED, HIGH);
+        delay(dash);
+        digitalWrite(LED, LOW);
+        delay(pauseSpace);
+      }
+      delay(letterSpace);
+
+      break;
+    case 'd': // "D".  dash dot dot
+      digitalWrite(LED, HIGH);
+      delay(dash);
+      digitalWrite(LED, LOW);
+      delay(pauseSpace);
+      for (int i = 0; i < 2; i++) {
+        digitalWrite(LED, HIGH);
+        delay(dot);
+        digitalWrite(LED, LOW);
+        delay(pauseSpace);
+      }
+      delay(letterSpace);
+
+      break;
+    case '.': // end of word
+      delay(wordSpace);
+      break;
+    default:
+      Serial << F("Don't know morse for: ") << letter << endl;
+      break;
+  }
+}
 
 static char * dec2binWzerofill(unsigned long Dec, unsigned int bitLength) {
   static char bin[64];
