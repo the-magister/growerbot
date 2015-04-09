@@ -59,7 +59,8 @@ void setup() {
   // Radio module
   radio.enableReceive(0);  // Receiver on interrupt 0 => that is pin D2
   radio.enableTransmit(10); // Transmitter on pin D10
-
+  radio.setRepeatTransmit(3); // repeat a transmission 3 times.
+  
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 2048, 3048);
@@ -89,7 +90,7 @@ void loop() {
     output(radio.getReceivedValue(), radio.getReceivedBitlength(), radio.getReceivedDelay(), radio.getReceivedRawdata(), radio.getReceivedProtocol());
     //    radio.resetAvailable();
   }
-
+/*
   // look for sensor data
   getSensorData();
 
@@ -115,7 +116,7 @@ void loop() {
   if ( rtc.checkIfAlarm(1) ) {
     wateringTime();
   }
-
+*/
 }
 
 void getTimeUpdate() {
