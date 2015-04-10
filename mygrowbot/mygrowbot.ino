@@ -1,6 +1,4 @@
 #include <Streaming.h>
-//#include <Time.h>
-//#include <TimeAlarms.h>
 #include <Metro.h>
 #include <RCSwitch.h>
 #include <DS3231.h>
@@ -34,6 +32,9 @@ const boolean ps[nSensors] = {0, 0, 0};
 // SOS: a sensor is acting whacky
 #define LED 13
 
+// define a maximum watering time, in hours
+int maxWaterTime = 4; // hr
+
 void setup() {
   Serial.begin(115200);
 
@@ -60,7 +61,7 @@ void setup() {
   radio.enableReceive(0);  // Receiver on interrupt 0 => that is pin D2
   radio.enableTransmit(10); // Transmitter on pin D10
   radio.setRepeatTransmit(3); // repeat a transmission 3 times.
-  
+
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 2048, 3048);
@@ -90,33 +91,33 @@ void loop() {
     output(radio.getReceivedValue(), radio.getReceivedBitlength(), radio.getReceivedDelay(), radio.getReceivedRawdata(), radio.getReceivedProtocol());
     //    radio.resetAvailable();
   }
-/*
-  // look for sensor data
-  getSensorData();
+  /*
+    // look for sensor data
+    getSensorData();
 
-  // look for pump data
-  notePumpManualControl();
+    // look for pump data
+    notePumpManualControl();
 
-  // check for time update from Serial
-  getTimeUpdate();
+    // check for time update from Serial
+    getTimeUpdate();
 
-  // monitor for too dry
-  boolean tooDry = false;
-  for (int s = 0; s < nSensors; s++ ) {
-    if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
-  }
-  if ( tooDry ) { 
-    printTime();
-    Serial << F(" BAD! one or more sensors reports 'too dry'") << endl;
-    ledTooDry();
-    delay(1000);
-  }
+    // monitor for too dry
+    boolean tooDry = false;
+    for (int s = 0; s < nSensors; s++ ) {
+      if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
+    }
+    if ( tooDry ) {
+      printTime();
+      Serial << F(" BAD! one or more sensors reports 'too dry'") << endl;
+      ledTooDry();
+      delay(1000);
+    }
 
-  // check alarm for Watering time
-  if ( rtc.checkIfAlarm(1) ) {
-    wateringTime();
-  }
-*/
+    // check alarm for Watering time
+    if ( rtc.checkIfAlarm(1) ) {
+      wateringTime();
+    }
+  */
 }
 
 void getTimeUpdate() {
@@ -153,7 +154,7 @@ void getSensorData() {
 
 void notePumpManualControl() {
   for (int i = 0; i < nPumps; i++) {
-    pump[i].readPump();
+    pump[i].readOutlet();
   }
 }
 
@@ -168,6 +169,8 @@ void wateringTime() {
 
   // track the start time for this cycle
   unsigned long now = millis();
+  Metro maxTimeReached(maxWaterTime * 60 * 60 * 1000); // hr -> ms
+  maxTimeReached.reset();
 
   // add some simulation
   for (int s = 0; s < nSensors; s++ ) {
@@ -230,7 +233,12 @@ void wateringTime() {
     keepWatering = false;
     for (int p = 0; p < nPumps; p++ ) keepWatering |= pump[p].isOn;
 
-//    delay(1000);
+    //    delay(1000);
+    if ( maxTimeReached.check() ) {
+      Serial << F("BAD: maximum watering time reached.  Shutting down...") << endl;
+      pumpsAllOff();
+      keepWatering = false;
+    }
   }
 
   Serial << F("All pumps off.  Watering cycle complete.") << endl;
@@ -250,6 +258,14 @@ void wateringTime() {
 
 }
 
+void pumpsAllOff() {
+  Serial << F("Shutting down all pumps...") << endl;
+  for (int p = 0; p < nPumps; p++ ) {
+  pump[p].turnOff();
+    delay(1000);
+  }
+}
+
 void printTime() {
   static bool h12 = false;
   static bool PM = false;
@@ -262,7 +278,7 @@ void printTime() {
 // some morse code to indicate what we're doing
 void ledTooDry() {
   ledMorse('d');
-  ledMorse('.');  
+  ledMorse('.');
 }
 
 void ledWatering() {

@@ -63,7 +63,7 @@ class BIOSDigitalSoilMeter {
     void turnOff();
 
     // look for manual outlet control (to stay in sync).
-    void readPump();
+    void readOutlet();
     
     // show outlet parameters
     void print();
@@ -78,9 +78,6 @@ class BIOSDigitalSoilMeter {
 
      // stores time outlet was turned on
     unsigned long onTime;
-
-    // toggle outlet
-    void toggle();
     
     // handles the outlet data packet
     int decodeAddress(unsigned long data);

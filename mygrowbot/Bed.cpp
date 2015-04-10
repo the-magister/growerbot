@@ -77,57 +77,58 @@ void EtekcityOutlet::begin(char * name, int onCode, int offCode){
   this->offCode = offCode;
   // pump state
   this->isOn = false;
+  this->turnOff();
   
   // show it
   this->print();
 }
 
-// turn pump on and off
+// turn outlet on 
 void EtekcityOutlet::turnOn(){
+  // only update onTime and print if there's a change
   if( ! this->isOn ) {
+    this->isOn = true;
     this->onTime = millis();
-  
-    this->toggle();
-    
     this->print();
   }
-}
-void EtekcityOutlet::turnOff(){
-  if( this->isOn ) {
-    this->toggle();
-    
-    this->print();
-  }
-}
 
-void EtekcityOutlet::toggle() {
-  this->isOn = !this->isOn;
   radio.setPulseLength(EtekcityOutletPulseLength);  // set the pulse length to talk to the pumps
-
-  if( this->isOn ) {
-     radio.send(this->onCode, EtekcityOutletBitLength); // Turn switch on/off
-  } else {
-     radio.send(this->offCode, EtekcityOutletBitLength); // Turn switch on/off
-  }
+  radio.send(this->onCode, EtekcityOutletBitLength);
 }
 
-void EtekcityOutlet::readPump(){
+// turn outlet off
+void EtekcityOutlet::turnOff(){
+  // only print if there's a change
+  if( this->isOn ) {
+    this -> isOn = false;
+    this->print();
+  }
+  
+  radio.setPulseLength(EtekcityOutletPulseLength);  // set the pulse length to talk to the pumps
+  radio.send(this->offCode, EtekcityOutletBitLength);
+}
+
+void EtekcityOutlet::readOutlet(){
   if (radio.available()) {
     // pull radio data
     unsigned long recv = radio.getReceivedValue();
  
     if( decodeAddress(recv) == this->onCode ) {
-      this->isOn = true;
-      this->lastOutletRead = millis();
-      this->print();
+      if( !this->isOn ) {
+        this->isOn = true;
+        this->print();
+      }
     
+      this->lastOutletRead = millis();
       radio.resetAvailable(); // clear radio buffer
     }
     else if( decodeAddress(recv) == this->offCode ) {
-      this->isOn = false;
-      this->lastOutletRead = millis();
-      this->print();
-    
+      if( this->isOn ) {
+        this->isOn = false;
+        this->print();
+      }
+
+      this->lastOutletRead = millis();  
       radio.resetAvailable(); // clear radio buffer
     }
   }
