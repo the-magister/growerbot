@@ -6,9 +6,9 @@ extern void printTime();
 // Find the three values for your switch by using the Advanced Receieve sketch
 // Supplied with the RCSwitch library
 const int EtekcityOutletBitLength=24;    // the pump bitlength is 24
-const int EtekcityOutletPulseLength=166; // the pump pulse length in microseconds is 166
+const int EtekcityOutletPulseLength=180; // the pump pulse length in microseconds is 180
 
-void BIOSDigitalSoilMeter::begin(char * name, int sensorAddress, byte minMoist, byte maxMoist) {
+void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte minMoist, byte maxMoist) {
   // set name
   strcpy(this->name, name);
   // set sensor address
@@ -59,7 +59,7 @@ boolean BIOSDigitalSoilMeter::justRight() {
 }
 
 // see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/
-int BIOSDigitalSoilMeter::decodeAddress(unsigned long data) {
+unsigned long BIOSDigitalSoilMeter::decodeAddress(unsigned long data) {
   return ( getBits(data, 32, 11) );
 }
 float BIOSDigitalSoilMeter::decodeTemp(unsigned long data) {
@@ -69,12 +69,19 @@ byte BIOSDigitalSoilMeter::decodeMoist(unsigned long data) {
   return ( getBits(data, 8, 4) );
 }
 
-void EtekcityOutlet::begin(char * name, int onCode, int offCode){
+void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offCode, int bitLength, int pulseLength, int protocol){
   // set name
   strcpy(this->name, name);
+  
   // set pump codes
   this->onCode = onCode;
   this->offCode = offCode;
+
+  // set protocol for transmission
+  this->bitLength = bitLength;
+  this->pulseLength = pulseLength;
+  this->protocol = protocol;
+
   // pump state
   this->isOn = false;
   this->turnOff();
@@ -91,9 +98,7 @@ void EtekcityOutlet::turnOn(){
     this->onTime = millis();
     this->print();
   }
-
-  radio.setPulseLength(EtekcityOutletPulseLength);  // set the pulse length to talk to the pumps
-  radio.send(this->onCode, EtekcityOutletBitLength);
+  this->send(this->onCode);
 }
 
 // turn outlet off
@@ -103,9 +108,14 @@ void EtekcityOutlet::turnOff(){
     this -> isOn = false;
     this->print();
   }
-  
-  radio.setPulseLength(EtekcityOutletPulseLength);  // set the pulse length to talk to the pumps
-  radio.send(this->offCode, EtekcityOutletBitLength);
+  this->send(this->offCode);
+}
+
+// handles transmission
+void EtekcityOutlet::send(unsigned long code) {
+  radio.setProtocol(this->protocol);        // protocol 1
+  radio.setPulseLength(this->pulseLength);   // 180 us pulse length
+  radio.send(code, this->bitLength);
 }
 
 void EtekcityOutlet::readOutlet(){
@@ -135,7 +145,7 @@ void EtekcityOutlet::readOutlet(){
 
 }
 
-int EtekcityOutlet::decodeAddress(unsigned long data) {
+unsigned long EtekcityOutlet::decodeAddress(unsigned long data) {
   return( data );
 }
 

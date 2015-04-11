@@ -8,7 +8,7 @@
 
 class BIOSDigitalSoilMeter {
   public:
-    void begin(char name[], int sensorAddress, byte minMoist=6, byte maxMoist=11);
+    void begin(char name[], unsigned long sensorAddress, byte minMoist=6, byte maxMoist=11);
                
     void setMoistureTargets(byte minMoist, byte maxMoist);
        
@@ -35,14 +35,14 @@ class BIOSDigitalSoilMeter {
   private:
     
    // store the sensor address code
-    int sensorAddress;
+    unsigned long sensorAddress;
     
     // define moisture targets for each bed. 0-3 (dry), 4-7 (damp), 8-11 (wet)
     byte minMoist;
     byte maxMoist;
 
     // handles the sensor data packet
-    int decodeAddress(unsigned long data);
+    unsigned long decodeAddress(unsigned long data);
     float decodeTemp(unsigned long data);
     byte decodeMoist(unsigned long data);
     
@@ -53,7 +53,7 @@ class BIOSDigitalSoilMeter {
  
  class EtekcityOutlet {
    public:
-    void begin(char name[], int onCode, int offCode);
+    void begin(char name[], unsigned long onCode, unsigned long offCode, int bitLength=24, int pulseLength=180, int protocol=1);
                
     // store current outlet state
     boolean isOn;
@@ -74,16 +74,22 @@ class BIOSDigitalSoilMeter {
   private:
 
     // store the outlet address codes
-    int onCode, offCode;
+    unsigned long onCode, offCode;
 
      // stores time outlet was turned on
     unsigned long onTime;
     
     // handles the outlet data packet
-    int decodeAddress(unsigned long data);
+    unsigned long decodeAddress(unsigned long data);
    
     // stores the last time we got a manual outlet change signal
     unsigned long lastOutletRead;
+    
+    // store bit length, pulse length and protocol for sending
+    int bitLength, pulseLength, protocol;
+    
+    // handles transmission
+    void send(unsigned long code);
 
  };
 

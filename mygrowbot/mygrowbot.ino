@@ -20,7 +20,7 @@ const int nSensors = 3;
 BIOSDigitalSoilMeter sensor[nSensors];
 
 // how many pumps are we controlling?
-const int nPumps = 4;
+const int nPumps = 5;
 EtekcityOutlet pump[nPumps];
 
 // what pumps water which sensors?
@@ -35,6 +35,9 @@ const boolean ps[nSensors] = {0, 0, 0};
 // define a maximum watering time, in hours
 int maxWaterTime = 4; // hr
 
+// set to true to get all the gory details upon radio receipt
+#define DEBUG_RADIO false
+
 void setup() {
   Serial.begin(115200);
 
@@ -48,32 +51,39 @@ void setup() {
   Wire.begin();
 
   // Timers
-  //  setTime(21, 0, 0, 27, 4, 11);
-  //  Alarm.alarmRepeat(21, 0, 1, WateringTime);
-
-  // 9pm. when hour, min, sec match.
   rtc.setClockMode(false); // 24 time.
+  rtc.setSecond(rtc.getSecond()); // maybe needed to clear power cycle flag?
+  // 9pm. when hour, min, sec match.
   rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
+  // check this
+  byte A1Day, A1Hour, A1Minute, A1Second, AlarmBits;
+  bool A1Dy, A1h12, A1PM;
+  rtc.getA1Time(A1Day, A1Hour, A1Minute, A1Second, AlarmBits, A1Dy, A1h12, A1PM);
+  Serial << F("Watering time alarm set for ") << A1Hour << F(":") << A1Minute << F(":") << A1Second << endl;
+  // send 20,59,45,4,27,11 to simulate a watering run.
   rtc.turnOnAlarm(1);
   Serial << F("Watering alarm enabled? ") << rtc.checkAlarmEnabled(1) << endl;
 
   // Radio module
-  radio.enableReceive(0);  // Receiver on interrupt 0 => that is pin D2
-  radio.enableTransmit(10); // Transmitter on pin D10
-  radio.setRepeatTransmit(3); // repeat a transmission 3 times.
+  // receive
+  radio.enableReceive(0);      // Receiver DATA line on interrupt 0 => that is pin D2
+  // transmit
+  radio.enableTransmit(10);    // Transmitter DATA line on pin D10
+  radio.setRepeatTransmit(5);  // repeat a transmission 5 times.
 
   // pumps
   Serial << F("Pumps:") << endl;
-  pump[0].begin("Pump 1", 2048, 3048);
-  pump[1].begin("Pump 2", 2049, 3049);
-  pump[2].begin("Pump 3", 2050, 3050);
-  pump[3].begin("Pump 4", 2051, 3051);
+  pump[0].begin("Pump 1", 1381683, 1381692);
+  pump[1].begin("Pump 2", 1381827, 1381836);
+  pump[2].begin("Pump 3", 1382147, 1382156);
+  pump[3].begin("Pump 4", 1383683, 1383692);
+  pump[3].begin("Pump 5", 1389827, 1389836);
 
   // sensors
   Serial << F("Sensors:") << endl;
-  sensor[0].begin("Bed A", 1947, 6, 10);
-  sensor[1].begin("Bed B", 1948, 6, 10);
-  sensor[2].begin("Bed C", 1949, 4, 8);   // try to keep this bed drier
+  sensor[0].begin("South Bed", 1947, 6, 10);
+  sensor[1].begin("West Bed", 1948, 6, 10);
+  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
 
   // pump and sensor relationships
   Serial << F("Pump waters Sensors:") << endl;
@@ -86,90 +96,54 @@ void setup() {
 }
 
 void loop() {
-  if (radio.available()) {
+  if (DEBUG_RADIO && radio.available()) {
     Serial << F("Radio:") << endl;
     output(radio.getReceivedValue(), radio.getReceivedBitlength(), radio.getReceivedDelay(), radio.getReceivedRawdata(), radio.getReceivedProtocol());
     //    radio.resetAvailable();
   }
-  /*
-    // look for sensor data
-    getSensorData();
+  // look for sensor data
+  getSensorData();
 
-    // look for pump data
-    notePumpManualControl();
+  // look for pump data
+  notePumpManualControl();
 
-    // check for time update from Serial
-    getTimeUpdate();
+  // check for time update from Serial
+  getTimeUpdate();
 
-    // monitor for too dry
-    boolean tooDry = false;
-    for (int s = 0; s < nSensors; s++ ) {
-      if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
-    }
-    if ( tooDry ) {
+  // monitor for too dry
+  boolean tooDry = false;
+  for (int s = 0; s < nSensors; s++ ) {
+    if ( sensor[s].tooDry() ) tooDry |= true; // any tooDry signals tooDry
+  }
+  static Metro reportSensorDry(30UL * 60UL * 1000UL); // every 30 minutes
+  if ( tooDry ) {
+    if ( reportSensorDry.check() ) {
       printTime();
-      Serial << F(" BAD! one or more sensors reports 'too dry'") << endl;
-      ledTooDry();
-      delay(1000);
+      Serial << F(": BAD! one or more sensors reports 'too dry'") << endl;
+      reportSensorDry.reset();
     }
+    ledTooDry();
+  }
 
-    // check alarm for Watering time
+  // check alarm for Watering time
+  static Metro checkAlarm(1000UL); // every second.
+  if ( checkAlarm.check() ) {
+    checkAlarm.reset();
+    // the RTC needs to be polled on an interval to actually set alarm flag.
+    byte toss = rtc.getSecond();
     if ( rtc.checkIfAlarm(1) ) {
       wateringTime();
     }
-  */
-}
-
-void getTimeUpdate() {
-  while (Serial.available() > 0) {
-    // wait for everything to come in.
-    delay(25);
-    // look for the next valid integer in the incoming serial stream:
-    int hr = Serial.parseInt();
-    int mi = Serial.parseInt();
-    int se = Serial.parseInt();
-    int da = Serial.parseInt();
-    int mo = Serial.parseInt();
-    int ye = Serial.parseInt();
-    while ( Serial.read() > -1); // dump anything trailing.
-
-    Serial << F("Time update received. Format: hr, min, sec, day, month, year\\n") << endl;
-    rtc.setHour(constrain(hr, 0, 24));
-    rtc.setMinute(constrain(mi, 0, 60));
-    rtc.setSecond(constrain(se, 0, 60));
-    rtc.setDate(constrain(da, 1, 31));
-    rtc.setMonth(constrain(mo, 1, 12));
-    rtc.setYear(constrain(ye, 0, 99));
-    Serial << F("Time set to: ");
-    printTime();
-    Serial << endl;
   }
-}
-
-void getSensorData() {
-  for (int i = 0; i < nSensors; i++) {
-    sensor[i].readSensor();
-  }
-}
-
-void notePumpManualControl() {
-  for (int i = 0; i < nPumps; i++) {
-    pump[i].readOutlet();
-  }
-}
-
-void printSensors() {
-  Serial << F("Sensors:") << endl;
-  for ( int s = 0; s < nSensors; s++ ) sensor[s].print();
 }
 
 void wateringTime() {
   printTime();
-  Serial << F(".  Watering time.") << endl;
+  Serial << F(": Watering time.") << endl;
 
   // track the start time for this cycle
   unsigned long now = millis();
-  Metro maxTimeReached(maxWaterTime * 60 * 60 * 1000); // hr -> ms
+  Metro maxTimeReached(long(maxWaterTime) * 60UL * 60UL * 1000UL); // hr -> ms
   maxTimeReached.reset();
 
   // add some simulation
@@ -258,10 +232,52 @@ void wateringTime() {
 
 }
 
+void getTimeUpdate() {
+  while (Serial.available() > 0) {
+    // wait for everything to come in.
+    delay(25);
+    // look for the next valid integer in the incoming serial stream:
+    int hr = Serial.parseInt();
+    int mi = Serial.parseInt();
+    int se = Serial.parseInt();
+    int da = Serial.parseInt();
+    int mo = Serial.parseInt();
+    int ye = Serial.parseInt();
+    while ( Serial.read() > -1); // dump anything trailing.
+
+    Serial << F("Time update received. Format: hr, min, sec, day, month, year\\n") << endl;
+    rtc.setHour(constrain(hr, 0, 24));
+    rtc.setMinute(constrain(mi, 0, 60));
+    rtc.setSecond(constrain(se, 0, 60));
+    rtc.setDate(constrain(da, 1, 31));
+    rtc.setMonth(constrain(mo, 1, 12));
+    rtc.setYear(constrain(ye, 0, 99));
+    Serial << F("Time set to: ");
+    printTime();
+    Serial << endl;
+  }
+}
+
+void getSensorData() {
+  for (int i = 0; i < nSensors; i++) {
+    sensor[i].readSensor();
+  }
+}
+
+void notePumpManualControl() {
+  for (int i = 0; i < nPumps; i++) {
+    pump[i].readOutlet();
+  }
+}
+
+void printSensors() {
+  for ( int s = 0; s < nSensors; s++ ) sensor[s].print();
+}
+
 void pumpsAllOff() {
   Serial << F("Shutting down all pumps...") << endl;
   for (int p = 0; p < nPumps; p++ ) {
-  pump[p].turnOff();
+    pump[p].turnOff();
     delay(1000);
   }
 }
