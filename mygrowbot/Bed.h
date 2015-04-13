@@ -19,7 +19,7 @@ class BIOSDigitalSoilMeter {
     float currTemp;
 
     // look for sensor update and parse.  sets currMoist and currTemp.
-    void readSensor();
+    void readSensor(unsigned long recv);
  
     // show sensor parameters
     void print();
@@ -32,10 +32,13 @@ class BIOSDigitalSoilMeter {
     // store sensor name
     char name[20];
   
-  private:
-    
-   // store the sensor address code
+    // store the sensor address code
     unsigned long sensorAddress;
+
+    // stores last sensor update time
+    unsigned long lastSensorRead;
+    
+private:    
     
     // define moisture targets for each bed. 0-3 (dry), 4-7 (damp), 8-11 (wet)
     byte minMoist;
@@ -46,8 +49,6 @@ class BIOSDigitalSoilMeter {
     float decodeTemp(unsigned long data);
     byte decodeMoist(unsigned long data);
     
-    // stores last sensor update time
-    unsigned long lastSensorRead;
 
  };
  

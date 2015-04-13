@@ -132,11 +132,13 @@ class RCSwitch {
     static unsigned int nReceivedBitlength;
     static unsigned int nReceivedDelay;
     static unsigned int nReceivedProtocol;
-    #endif
+
+    static unsigned int timings[RCSWITCH_MAX_CHANGES];
+   #endif
     /* 
      * timings[0] contains sync timing, followed by a number of bits
      */
-    static unsigned int timings[RCSWITCH_MAX_CHANGES];
+ 
 
     
 };

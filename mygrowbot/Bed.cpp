@@ -5,8 +5,8 @@ extern void printTime();
 
 // Find the three values for your switch by using the Advanced Receieve sketch
 // Supplied with the RCSwitch library
-const int EtekcityOutletBitLength=24;    // the pump bitlength is 24
-const int EtekcityOutletPulseLength=180; // the pump pulse length in microseconds is 180
+const int EtekcityOutletBitLength = 24;  // the pump bitlength is 24
+const int EtekcityOutletPulseLength = 180; // the pump pulse length in microseconds is 180
 
 void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte minMoist, byte maxMoist) {
   // set name
@@ -16,7 +16,7 @@ void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte 
   // set targets
   setMoistureTargets(minMoist, maxMoist);
   // at startup, set the current to not trigger alarms
-  this->currMoist = maxMoist-1;
+  this->currMoist = maxMoist - 1;
 
   this->print();
 }
@@ -33,36 +33,31 @@ void BIOSDigitalSoilMeter::setMoistureTargets(byte minMoist, byte maxMoist) {
   this->maxMoist = maxMoist;
 }
 
-void BIOSDigitalSoilMeter::readSensor() {
-  if (radio.available()) {
-    // pull radio data
-    unsigned long recv = radio.getReceivedValue();
- 
-    if( decodeAddress(recv) == this->sensorAddress ) {
-      this->currMoist = decodeMoist(recv);
-      this->currTemp = decodeTemp(recv);
-      this->lastSensorRead = millis();
-      this->print();
-    
-      radio.resetAvailable(); // clear radio buffer
-    }
+void BIOSDigitalSoilMeter::readSensor(unsigned long recv) {
+
+  if ( decodeAddress(recv) == this->sensorAddress ) {
+    Serial << F("Address matches ") << this->name << endl;
+    this->currMoist = decodeMoist(recv);
+    this->currTemp = decodeTemp(recv);
+    this->lastSensorRead = millis();
+    this->print();
   }
 }
 
 boolean BIOSDigitalSoilMeter::tooDry() {
-  return( this->currMoist < this->minMoist );
+  return ( this->currMoist < this->minMoist );
 }
-boolean BIOSDigitalSoilMeter::tooWet(){
-  return( this->currMoist > this->maxMoist );
+boolean BIOSDigitalSoilMeter::tooWet() {
+  return ( this->currMoist > this->maxMoist );
 }
 boolean BIOSDigitalSoilMeter::justRight() {
   // just before reporting "too wet"
-  return( this->currMoist+1 == this->maxMoist );
+  return ( this->currMoist + 1 == this->maxMoist );
 }
 
 // see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/
 unsigned long BIOSDigitalSoilMeter::decodeAddress(unsigned long data) {
-  return ( getBits(data, 32, 11) );
+  return ( getBits(data, 32, 8) );
 }
 float BIOSDigitalSoilMeter::decodeTemp(unsigned long data) {
   return ( float(getBits(data, 20, 12)) / 10.0 );
@@ -71,10 +66,10 @@ byte BIOSDigitalSoilMeter::decodeMoist(unsigned long data) {
   return ( getBits(data, 8, 4) );
 }
 
-void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offCode, int bitLength, int pulseLength, int protocol){
+void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offCode, int bitLength, int pulseLength, int protocol) {
   // set name
   strcpy(this->name, name);
-  
+
   // set pump codes
   this->onCode = onCode;
   this->offCode = offCode;
@@ -87,15 +82,15 @@ void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offC
   // pump state
   this->isOn = false;
   this->turnOff();
-  
+
   // show it
   this->print();
 }
 
-// turn outlet on 
-void EtekcityOutlet::turnOn(){
+// turn outlet on
+void EtekcityOutlet::turnOn() {
   // only update onTime and print if there's a change
-  if( ! this->isOn ) {
+  if ( ! this->isOn ) {
     this->isOn = true;
     this->onTime = millis();
     this->print();
@@ -104,9 +99,9 @@ void EtekcityOutlet::turnOn(){
 }
 
 // turn outlet off
-void EtekcityOutlet::turnOff(){
+void EtekcityOutlet::turnOff() {
   // only print if there's a change
-  if( this->isOn ) {
+  if ( this->isOn ) {
     this -> isOn = false;
     this->print();
   }
@@ -120,27 +115,27 @@ void EtekcityOutlet::send(unsigned long code) {
   radio.send(code, this->bitLength);
 }
 
-void EtekcityOutlet::readOutlet(){
+void EtekcityOutlet::readOutlet() {
   if (radio.available()) {
     // pull radio data
     unsigned long recv = radio.getReceivedValue();
- 
-    if( decodeAddress(recv) == this->onCode ) {
-      if( !this->isOn ) {
+
+    if ( decodeAddress(recv) == this->onCode ) {
+      if ( !this->isOn ) {
         this->isOn = true;
         this->print();
       }
-    
+
       this->lastOutletRead = millis();
       radio.resetAvailable(); // clear radio buffer
     }
-    else if( decodeAddress(recv) == this->offCode ) {
-      if( this->isOn ) {
+    else if ( decodeAddress(recv) == this->offCode ) {
+      if ( this->isOn ) {
         this->isOn = false;
         this->print();
       }
 
-      this->lastOutletRead = millis();  
+      this->lastOutletRead = millis();
       radio.resetAvailable(); // clear radio buffer
     }
   }
@@ -148,15 +143,15 @@ void EtekcityOutlet::readOutlet(){
 }
 
 unsigned long EtekcityOutlet::decodeAddress(unsigned long data) {
-  return( data );
+  return ( data );
 }
 
 // show pump parameters
-void EtekcityOutlet::print(){
+void EtekcityOutlet::print() {
   printTime();
   Serial << F(": ") << this->name;
   Serial << F(". Status: ");
-  if(this->isOn) Serial << F("ON.");
+  if (this->isOn) Serial << F("ON.");
   else Serial << F("OFF.");
   Serial << endl;
 }

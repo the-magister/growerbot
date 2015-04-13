@@ -1,5 +1,6 @@
 #include <Streaming.h>
 #include <Metro.h>
+#define RCSwitchDisableReceiving
 #include <RCSwitch.h>
 #include <DS3231.h>
 #include <Wire.h>
@@ -20,7 +21,7 @@ const int nSensors = 3;
 BIOSDigitalSoilMeter sensor[nSensors];
 
 // how many pumps are we controlling?
-const int nPumps = 5;
+const int nPumps = 1;
 EtekcityOutlet pump[nPumps];
 
 // what pumps water which sensors?
@@ -36,7 +37,11 @@ const boolean ps[nSensors] = {0, 0, 0};
 int maxWaterTime = 4; // hr
 
 // set to true to get all the gory details upon radio receipt
-#define DEBUG_RADIO false
+#define DEBUG_RADIO true
+#define DATAPIN 2 // D2 is int.0
+
+// track if we've got sensor data
+bool sensorReceived = false;
 
 void setup() {
   Serial.begin(115200);
@@ -66,7 +71,11 @@ void setup() {
 
   // Radio module
   // receive
-  radio.enableReceive(0);      // Receiver DATA line on interrupt 0 => that is pin D2
+  //  radio.enableReceive(0);      // Receiver DATA line on interrupt 0 => that is pin D2
+  // can't get RC Switch to work with the Thermor BIOS sensors.  So, we can't listen to the manual switches.  Pity.
+  pinMode(DATAPIN, INPUT);
+  attachInterrupt(0, handler, CHANGE); // D2 is int.0
+
   // transmit
   radio.enableTransmit(10);    // Transmitter DATA line on pin D10
   radio.setRepeatTransmit(5);  // repeat a transmission 5 times.
@@ -74,15 +83,17 @@ void setup() {
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 1381683, 1381692);
-  pump[1].begin("Pump 2", 1381827, 1381836);
-  pump[2].begin("Pump 3", 1382147, 1382156);
-  pump[3].begin("Pump 4", 1383683, 1383692);
-  pump[3].begin("Pump 5", 1389827, 1389836);
+  //  pump[1].begin("Pump 2", 1381827, 1381836);
+  //  pump[2].begin("Pump 3", 1382147, 1382156);
+  //  pump[3].begin("Pump 4", 1383683, 1383692);
+  //  pump[4].begin("Pump 5", 1389827, 1389836);
 
   // sensors
   Serial << F("Sensors:") << endl;
-  sensor[0].begin("South Bed", 1947, 6, 10);
-  sensor[1].begin("West Bed", 1948, 6, 10);
+//  sensor[0].begin("South Bed", 324, 6, 10);
+//  sensor[1].begin("West Bed", 868, 6, 10);
+  sensor[0].begin("South Bed", 320, 6, 10);
+  sensor[1].begin("West Bed", 864, 6, 10);
   sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
 
   // pump and sensor relationships
@@ -96,11 +107,6 @@ void setup() {
 }
 
 void loop() {
-  if (DEBUG_RADIO && radio.available()) {
-    Serial << F("Radio:") << endl;
-    output(radio.getReceivedValue(), radio.getReceivedBitlength(), radio.getReceivedDelay(), radio.getReceivedRawdata(), radio.getReceivedProtocol());
-    //    radio.resetAvailable();
-  }
   // look for sensor data
   getSensorData();
 
@@ -135,6 +141,7 @@ void loop() {
       wateringTime();
     }
   }
+
 }
 
 void wateringTime() {
@@ -232,6 +239,155 @@ void wateringTime() {
 
 }
 
+
+// ring buffer size has to be large enough to fit
+// data between two successive sync signals
+//#define RING_BUFFER_SIZE  256
+#define RING_BUFFER_SIZE 78
+
+#define SYNC_LENGTH  9000
+#define SEP_LENGTH   500
+#define BIT1_LENGTH  4000
+#define BIT0_LENGTH  2000
+
+unsigned long timings[RING_BUFFER_SIZE];
+unsigned int syncIndex1 = 0;  // index of the first sync signal
+unsigned int syncIndex2 = 0;  // index of the second sync signal
+
+// detect if a sync signal is present
+bool isSync(unsigned int idx) {
+  unsigned long t0 = timings[(idx + RING_BUFFER_SIZE - 1) % RING_BUFFER_SIZE];
+  unsigned long t1 = timings[idx];
+
+  // on the temperature sensor, the sync signal
+  // is roughtly 9.0ms. Accounting for error
+  // it should be within 8.0ms and 10.0ms
+  if (t0 > (SEP_LENGTH - 100) && t0 < (SEP_LENGTH + 100) &&
+      t1 > (SYNC_LENGTH - 1000) && t1 < (SYNC_LENGTH + 1000) &&
+      digitalRead(DATAPIN) == HIGH) {
+    return true;
+  }
+  return false;
+}
+
+/* Interrupt 1 handler */
+void handler() {
+  static unsigned long duration = 0;
+  static unsigned long lastTime = 0;
+  static unsigned int ringIndex = 0;
+  static unsigned int syncCount = 0;
+
+  // ignore if we haven't processed the previous received signal
+  if (sensorReceived == true) {
+    return;
+  }
+  // calculating timing since last change
+  long time = micros();
+  duration = time - lastTime;
+  lastTime = time;
+
+  // store data in ring buffer
+  ringIndex = (ringIndex + 1) % RING_BUFFER_SIZE;
+  timings[ringIndex] = duration;
+
+  // detect sync signal
+  if (isSync(ringIndex)) {
+    syncCount ++;
+    // first time sync is seen, record buffer index
+    if (syncCount == 1) {
+      syncIndex1 = (ringIndex + 1) % RING_BUFFER_SIZE;
+    }
+    else if (syncCount == 2) {
+      // second time sync is seen, start bit conversion
+      syncCount = 0;
+      syncIndex2 = (ringIndex + 1) % RING_BUFFER_SIZE;
+      unsigned int changeCount = (syncIndex2 < syncIndex1) ? (syncIndex2 + RING_BUFFER_SIZE - syncIndex1) : (syncIndex2 - syncIndex1);
+      // changeCount must be 66 -- 32 bits x 2 + 2 for sync
+//      if (changeCount != 76) {
+      if (changeCount != 38*2) {
+        sensorReceived = false;
+        syncIndex1 = 0;
+        syncIndex2 = 0;
+      }
+      else {
+        sensorReceived = true;
+      }
+    }
+  }
+}
+
+void getSensorData() {
+  unsigned long recv = 0;
+
+  if ( sensorReceived ) {
+    // disable interrupt to avoid new data corrupting the buffer
+    detachInterrupt(0);
+
+    // loop over buffer data
+    byte bitCount = 0;
+    unsigned long address = 0;
+    unsigned long temp = 0;
+    unsigned long hum = 0;
+    for (unsigned int i = syncIndex1; i != syncIndex2; i = (i + 2) % RING_BUFFER_SIZE) {
+      unsigned long t0 = timings[i], t1 = timings[(i + 1) % RING_BUFFER_SIZE];
+      if (t0 > (SEP_LENGTH - 100) && t0 < (SEP_LENGTH + 100)) {
+        if (t1 > (BIT1_LENGTH - 1000) && t1 < (BIT1_LENGTH + 1000)) {
+  //        Serial << F("1");
+          if ( bitCount < 12) {
+            address = address << 1;
+            address += 1;
+          } else if ( bitCount < 12 + 12 ) {
+            temp = temp << 1;
+            temp += 1;
+          } else if ( bitCount < 12 + 12 + 4 ) {
+            hum = hum << 1;
+            hum += 1;
+          }
+          bitCount++;
+        } else {
+ //         Serial << F("0");
+          if ( bitCount < 12) {
+            address = address << 1;
+          } else if ( bitCount < 12 + 12 ) {
+            temp = temp << 1;
+          } else if ( bitCount < 12 + 12 + 4 ) {
+            hum = hum << 1;
+          }
+          bitCount++;
+        }
+      } else {
+ //       Serial << F("?");
+      }
+    }
+//    Serial << endl;
+
+    if ( bitCount >= 12 + 12 + 4 && DEBUG_RADIO) {
+      Serial << dec2binWzerofill(address, 12) << dec2binWzerofill(temp, 12) << dec2binWzerofill(hum, 4) << endl;
+      Serial << F("bitcount: ") << bitCount << endl;
+      Serial << F("Address: ") << address << F(" ") << dec2binWzerofill(address, 32) << endl;
+      Serial << F("Temp: ") << float(temp / 10.0) << F(" ") << dec2binWzerofill(temp, 32) << endl;
+      Serial << F("Humidity: ") << hum << F(" ") << dec2binWzerofill(hum, 32) << endl;
+    }
+
+    for (int i = 0; i < nSensors; i++) {
+      if( sensor[i].sensorAddress == address ) {
+        sensor[i].currMoist = hum;
+        sensor[i].currTemp = float(temp/10.0);
+        sensor[i].lastSensorRead = millis();
+        sensor[i].print();
+      
+        delay(1000); // wait to drop duplicates/
+      }
+    }
+
+    // reattach
+    attachInterrupt(0, handler, CHANGE);
+    sensorReceived = false; // clear flag
+
+  }
+}
+
+
 void getTimeUpdate() {
   while (Serial.available() > 0) {
     // wait for everything to come in.
@@ -258,11 +414,6 @@ void getTimeUpdate() {
   }
 }
 
-void getSensorData() {
-  for (int i = 0; i < nSensors; i++) {
-    sensor[i].readSensor();
-  }
-}
 
 void notePumpManualControl() {
   for (int i = 0; i < nPumps; i++) {
@@ -394,7 +545,7 @@ static char * dec2binWzerofill(unsigned long Dec, unsigned int bitLength) {
   return bin;
 }
 
-void output(unsigned long decimal, unsigned int length, unsigned int delay, unsigned int* raw, unsigned int protocol) {
+void output(unsigned long decimal, unsigned int length, unsigned int delay, unsigned int * raw, unsigned int protocol) {
 
   if (decimal == 0) {
     Serial.print("Unknown encoding.");
@@ -425,7 +576,7 @@ void output(unsigned long decimal, unsigned int length, unsigned int delay, unsi
 }
 
 
-static char* bin2tristate(char* bin) {
+static char* bin2tristate(char * bin) {
   char returnValue[50];
   int pos = 0;
   int pos2 = 0;

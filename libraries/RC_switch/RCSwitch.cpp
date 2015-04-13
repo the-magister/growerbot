@@ -590,6 +590,7 @@ void RCSwitch::sendSync() {
 void RCSwitch::enableReceive(int interrupt) {
   this->nReceiverInterrupt = interrupt;
   this->enableReceive();
+  Serial.println("updated.");
 }
 
 void RCSwitch::enableReceive() {
@@ -710,6 +711,14 @@ bool RCSwitch::receiveProtocol2(unsigned int changeCount){
 
 }
 
+// used by Thermor BIOS Wireless Moisture Meter and Thermometer
+/* Encoding. Each transmission consists of 8 repetitions. 
+   The above shows one repetition: 
+     it starts with a sync signal (9000us low); 
+	 a logic 1 is a impulse (475us) high followed by a 4000us low; 
+	 a logic 0 is the same impulse high followed by a 2000us low.
+*/
+
 /** Protocol 3 is used by BL35P02.
  *
  */
@@ -760,7 +769,6 @@ void RCSwitch::handleInterrupt() {
   static unsigned long lastTime;
   static unsigned int repeatCount;
   
-
   long time = micros();
   duration = time - lastTime;
  
@@ -771,7 +779,7 @@ void RCSwitch::handleInterrupt() {
       if (receiveProtocol1(changeCount) == false){
         if (receiveProtocol2(changeCount) == false){
           if (receiveProtocol3(changeCount) == false){
-            //failed
+				//failed
           }
         }
       }
