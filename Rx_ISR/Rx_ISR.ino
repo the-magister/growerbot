@@ -11,7 +11,7 @@ volatile boolean rxUpdate = false;
 volatile unsigned long rxBits = 0;
 
 const int messageLength[NPROT] = { 32, 24 };
-const unsigned long pulseLength[NPROT] = { 475UL, 400UL };
+const unsigned long pulseLength[NPROT] = { 475UL, 180UL };
 const unsigned long oneSeq[NPROT][2] = {
   { 1, 4000UL / pulseLength[0] }, // TB304BC
   { 3, 1 } // ETEK
@@ -58,9 +58,10 @@ void setup() {
 }
 
 Metro simulateTimer(1000UL);
+boolean doSimulation = false;
 void loop() {
   // simulate traffic
-  if ( simulateTimer.check() ) {
+  if ( doSimulation && simulateTimer.check() ) {
     byte prot = random(0, NPROT);
     unsigned long txVal = random(0, pow(2, messageLength[prot] - 1) + 1);
 
@@ -77,6 +78,7 @@ void loop() {
   if ( gotMessage ) {
     Serial << F("Rx: prot=") << protocol;
     Serial << F(" Val: ") << dec2binWzerofill(rxVal, 32) << F("\t") << rxVal << endl << endl;
+    delay(1000); // drop repeats
     gotMessage = false;
   }
 }
@@ -161,7 +163,7 @@ void ISR0() {
           protocol = p;
           rxVal = 0; // reset rxVal
           rxCounts = 0; // reset rxCounts
-          //          Serial << F("S") << endl;
+          //Serial << F("S");
         }
       }
     } else {
@@ -170,13 +172,13 @@ void ISR0() {
         // Rx == 1
         rxCounts++;
         rxVal = (rxVal << 1) + 1; // bitshift current value up and add one at LSB
-        //        Serial << F("1") << endl;
+        //Serial << F("1");
 
       } else if ( isWithin(deltaTime, pulseLength[protocol]*zeroSeq[protocol][1], 133) ) {
         // Rx == 0
         rxCounts++;
         rxVal = (rxVal << 1) + 0; // bitshift current value up and add zero at LSB
-        //        Serial << F("0") << endl;
+        //Serial << F("0");
       } else {
         // uh oh, we got nonsense.
         eom = true;
@@ -191,10 +193,14 @@ void ISR0() {
     } else {
       // uh oh, we got nonsense.
       eom = true;
+      //Serial << F("?");
     }
 
     // maybe we've got enough bits?
-    if ( rxCounts >= messageLength[protocol] ) eom = true;
+    if ( rxCounts >= messageLength[protocol] ) {
+      eom = true;
+      //Serial << F("L");
+    }
 
   }
 
@@ -204,6 +210,7 @@ void ISR0() {
     if ( rxCounts >= messageLength[protocol] ) gotMessage = true;
     // reset
     gotSync = false;
+    //Serial << F("E");
   }
 }
 // helper function to accomodate timing differences
