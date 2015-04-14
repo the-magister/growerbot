@@ -10,6 +10,23 @@
 volatile boolean rxUpdate = false;
 volatile unsigned long rxBits = 0;
 
+// see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/
+/*
+Encoding. Each transmission consists of 8 repetitions.
+The above shows one repetition:
+it starts with a sync signal (9000us low);
+a logic 1 is a impulse (475us) high followed by a 4000us low;
+a logic 0 is the same impulse high followed by a 2000us low.
+*/
+
+// https://code.google.com/p/rc-switch/wiki/KnowHow_LineCoding
+/*
+Pulse length: 180us (1/31 time of the synchronization low level)
+Synchronization: 1 Pulse High + 31 Pulses Low
+Bits:
+0: 1 Pulse High + 3 Pulses Low
+1: 3 Pulses High + 1 Pulse Low
+*/
 const int messageLength[NPROT] = { 32, 24 };
 const unsigned long pulseLength[NPROT] = { 475UL, 180UL };
 const unsigned long oneSeq[NPROT][2] = {
@@ -116,23 +133,7 @@ void pinSet(int state, unsigned long interval) {
 }
 
 
-// see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/
-/*
-Encoding. Each transmission consists of 8 repetitions.
-The above shows one repetition:
-it starts with a sync signal (9000us low);
-a logic 1 is a impulse (475us) high followed by a 4000us low;
-a logic 0 is the same impulse high followed by a 2000us low.
-*/
 
-// https://code.google.com/p/rc-switch/wiki/KnowHow_LineCoding
-/*
-Pulse length: About 300 to 500 microseconds (1/31 time of the synchronization low level)
-Synchronization: 1 Pulse High + 31 Pulses Low
-Bits:
-0: 1 Pulse High + 3 Pulses Low
-1: 3 Pulses High + 1 Pulse Low
-*/
 
 void ISR0() {
 
