@@ -65,7 +65,7 @@ void loop() {
     byte prot = random(0, NPROT);
     unsigned long txVal = random(0, pow(2, messageLength[prot] - 1) + 1);
 
-    Serial << F("Tx: prot=") << prot;
+    Serial << endl << F("Tx: prot=") << prot;
     Serial << F(" Val: ") << dec2binWzerofill(txVal, 32) << F("\t") << txVal << endl;
 
     for( int i=0; i<3; i++) {
@@ -77,7 +77,7 @@ void loop() {
 
   if ( gotMessage ) {
     Serial << F("Rx: prot=") << protocol;
-    Serial << F(" Val: ") << dec2binWzerofill(rxVal, 32) << F("\t") << rxVal << endl << endl;
+    Serial << F(" Val: ") << dec2binWzerofill(rxVal, 32) << F("\t") << rxVal << endl;
     delay(1000); // drop repeats
     gotMessage = false;
   }
