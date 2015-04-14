@@ -9,11 +9,15 @@ DS3231 rtc;
 // radio abstraction
 #include "Radio.h"
 
+#define RXPIN 2
+#define TXPIN 10
+Radio radio;
+
 // sensor and pump abstraction
 #include "Bed.h"
 
 // how many sensors are we reading?
-const int nSensors = 3;
+const int nSensors = 2;
 BIOSDigitalSoilMeter sensor[nSensors];
 
 // how many pumps are we controlling?
@@ -21,7 +25,7 @@ const int nPumps = 1;
 EtekcityOutlet pump[nPumps];
 
 // what pumps water which sensors?
-const boolean ps[nSensors] = {0, 0, 0};
+const boolean ps[nSensors] = {0, 0};
 
 // use LED to indicate status
 // solid: one or more sensors is reporting too dry
@@ -31,13 +35,6 @@ const boolean ps[nSensors] = {0, 0, 0};
 
 // define a maximum watering time, in hours
 int maxWaterTime = 4; // hr
-
-// set to true to get all the gory details upon radio receipt
-#define DEBUG_RADIO true
-#define DATAPIN 2 // D2 is int.0
-
-// track if we've got sensor data
-bool sensorReceived = false;
 
 void setup() {
   Serial.begin(115200);
@@ -49,8 +46,8 @@ void setup() {
   pinMode(LED, OUTPUT);
 
   // RTC
+  // I2C startup
   Wire.begin();
-
   // Timers
   rtc.setClockMode(false); // 24 time.
   rtc.setSecond(rtc.getSecond()); // maybe needed to clear power cycle flag?
@@ -66,19 +63,15 @@ void setup() {
   Serial << F("Watering alarm enabled? ") << rtc.checkAlarmEnabled(1) << endl;
 
   // Radio module
-  // receive
-  //  radio.enableReceive(0);      // Receiver DATA line on interrupt 0 => that is pin D2
-  // can't get RC Switch to work with the Thermor BIOS sensors.  So, we can't listen to the manual switches.  Pity.
-  pinMode(DATAPIN, INPUT);
-  attachInterrupt(0, handler, CHANGE); // D2 is int.0
-
-  // transmit
-  radio.enableTransmit(10);    // Transmitter DATA line on pin D10
-  radio.setRepeatTransmit(5);  // repeat a transmission 5 times.
-
+  radio.begin(RXPIN, TXPIN);
+  radio.txRepeat(5); // 5 repeats
+  radio.txProtocol(1); // always tranmitting using protocol 1 (ETek outlets)
+  
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 1381683, 1381692);
+  radio.txMessage(pump[0].turnOff());
+  
   //  pump[1].begin("Pump 2", 1381827, 1381836);
   //  pump[2].begin("Pump 3", 1382147, 1382156);
   //  pump[3].begin("Pump 4", 1383683, 1383692);
@@ -149,11 +142,6 @@ void wateringTime() {
   Metro maxTimeReached(long(maxWaterTime) * 60UL * 60UL * 1000UL); // hr -> ms
   maxTimeReached.reset();
 
-  // add some simulation
-  for (int s = 0; s < nSensors; s++ ) {
-    sensor[s].currMoist = random(0, 8);
-  }
-
   // where are we?
   printSensors();
 
@@ -168,15 +156,7 @@ void wateringTime() {
 
     // work through each pump
     for (int p = 0; p < nPumps; p++ ) {
-
-      // add some simulation
-      for (int s = 0; s < nSensors; s++ ) {
-        if ( ps[s] == p && pump[p].isOn ) { // if this pump waters this sensor
-          sensor[s].currMoist++;
-          sensor[s].print();
-        }
-      }
-
+      
       boolean tooDry = false;
       boolean tooWet = false;
       boolean justRight = true;
@@ -193,22 +173,22 @@ void wateringTime() {
       // examine the results, and decide what to do.
       //
       // generally, we want to water infrequently, but heavily if we do.
-      // so, only turn on the pumps if the soil reads "too dry", but then run the pumps until we (just) hit "too wet"
+      // so, only turn on the pumps if the soil reads "too dry", but then run the pumps until just short of "too wet" (justRight)
 
       //      if ( tooWet || !tooDry ) {
       if ( tooWet || justRight ) {
         //        Serial << "too wet or not too dry" << endl;
-        pump[p].turnOff();
+        radio.txMessage(pump[0].turnOff());
       } else if ( tooDry ) {
         //       Serial << "too dry" << endl;
-        pump[p].turnOn();
+        radio.txMessage(pump[p].turnOn());
         delay(1000); // power draw on the pumps is high at startup.  stagger them.
       }
     }
 
     // check to see if all pumps are off.  If they are, we're done for the night.
     keepWatering = false;
-    for (int p = 0; p < nPumps; p++ ) keepWatering |= pump[p].isOn;
+    for (int p = 0; p < nPumps; p++ ) keepWatering |= pump[p].on();
 
     //    delay(1000);
     if ( maxTimeReached.check() ) {
@@ -218,6 +198,8 @@ void wateringTime() {
     }
   }
 
+  // just in case
+  pumpsAllOff();
   Serial << F("All pumps off.  Watering cycle complete.") << endl;
 
   // see where we ended up.
@@ -235,151 +217,27 @@ void wateringTime() {
 
 }
 
-
-// ring buffer size has to be large enough to fit
-// data between two successive sync signals
-//#define RING_BUFFER_SIZE  256
-#define RING_BUFFER_SIZE 78
-
-#define SYNC_LENGTH  9000
-#define SEP_LENGTH   500
-#define BIT1_LENGTH  4000
-#define BIT0_LENGTH  2000
-
-unsigned long timings[RING_BUFFER_SIZE];
-unsigned int syncIndex1 = 0;  // index of the first sync signal
-unsigned int syncIndex2 = 0;  // index of the second sync signal
-
-// detect if a sync signal is present
-bool isSync(unsigned int idx) {
-  unsigned long t0 = timings[(idx + RING_BUFFER_SIZE - 1) % RING_BUFFER_SIZE];
-  unsigned long t1 = timings[idx];
-
-  // on the temperature sensor, the sync signal
-  // is roughtly 9.0ms. Accounting for error
-  // it should be within 8.0ms and 10.0ms
-  if (t0 > (SEP_LENGTH - 100) && t0 < (SEP_LENGTH + 100) &&
-      t1 > (SYNC_LENGTH - 1000) && t1 < (SYNC_LENGTH + 1000) &&
-      digitalRead(DATAPIN) == HIGH) {
-    return true;
-  }
-  return false;
-}
-
-/* Interrupt 1 handler */
-void handler() {
-  static unsigned long duration = 0;
-  static unsigned long lastTime = 0;
-  static unsigned int ringIndex = 0;
-  static unsigned int syncCount = 0;
-
-  // ignore if we haven't processed the previous received signal
-  if (sensorReceived == true) {
-    return;
-  }
-  // calculating timing since last change
-  long time = micros();
-  duration = time - lastTime;
-  lastTime = time;
-
-  // store data in ring buffer
-  ringIndex = (ringIndex + 1) % RING_BUFFER_SIZE;
-  timings[ringIndex] = duration;
-
-  // detect sync signal
-  if (isSync(ringIndex)) {
-    syncCount ++;
-    // first time sync is seen, record buffer index
-    if (syncCount == 1) {
-      syncIndex1 = (ringIndex + 1) % RING_BUFFER_SIZE;
-    }
-    else if (syncCount == 2) {
-      // second time sync is seen, start bit conversion
-      syncCount = 0;
-      syncIndex2 = (ringIndex + 1) % RING_BUFFER_SIZE;
-      unsigned int changeCount = (syncIndex2 < syncIndex1) ? (syncIndex2 + RING_BUFFER_SIZE - syncIndex1) : (syncIndex2 - syncIndex1);
-      // changeCount must be 66 -- 32 bits x 2 + 2 for sync
-//      if (changeCount != 76) {
-      if (changeCount != 38*2) {
-        sensorReceived = false;
-        syncIndex1 = 0;
-        syncIndex2 = 0;
-      }
-      else {
-        sensorReceived = true;
-      }
-    }
+void notePumpManualControl() {
+  if( !radio.rxAvailable() ) return;
+  
+  // get the message
+  unsigned long message = radio.rxMessage();
+  
+  for (int i = 0; i < nPumps; i++) {
+    // push the message to the Outlets; if any can be processed, clear the rxMessage.
+    if( pump[i].readMessage(message) ) radio.rxClear();
   }
 }
 
 void getSensorData() {
-  unsigned long recv = 0;
-
-  if ( sensorReceived ) {
-    // disable interrupt to avoid new data corrupting the buffer
-    detachInterrupt(0);
-
-    // loop over buffer data
-    byte bitCount = 0;
-    unsigned long address = 0;
-    unsigned long temp = 0;
-    unsigned long hum = 0;
-    for (unsigned int i = syncIndex1; i != syncIndex2; i = (i + 2) % RING_BUFFER_SIZE) {
-      unsigned long t0 = timings[i], t1 = timings[(i + 1) % RING_BUFFER_SIZE];
-      if (t0 > (SEP_LENGTH - 100) && t0 < (SEP_LENGTH + 100)) {
-        if (t1 > (BIT1_LENGTH - 1000) && t1 < (BIT1_LENGTH + 1000)) {
-  //        Serial << F("1");
-          if ( bitCount < 12) {
-            address = address << 1;
-            address += 1;
-          } else if ( bitCount < 12 + 12 ) {
-            temp = temp << 1;
-            temp += 1;
-          } else if ( bitCount < 12 + 12 + 4 ) {
-            hum = hum << 1;
-            hum += 1;
-          }
-          bitCount++;
-        } else {
- //         Serial << F("0");
-          if ( bitCount < 12) {
-            address = address << 1;
-          } else if ( bitCount < 12 + 12 ) {
-            temp = temp << 1;
-          } else if ( bitCount < 12 + 12 + 4 ) {
-            hum = hum << 1;
-          }
-          bitCount++;
-        }
-      } else {
- //       Serial << F("?");
-      }
-    }
-//    Serial << endl;
-
-    if ( bitCount >= 12 + 12 + 4 && DEBUG_RADIO) {
-      Serial << dec2binWzerofill(address, 12) << dec2binWzerofill(temp, 12) << dec2binWzerofill(hum, 4) << endl;
-      Serial << F("bitcount: ") << bitCount << endl;
-      Serial << F("Address: ") << address << F(" ") << dec2binWzerofill(address, 32) << endl;
-      Serial << F("Temp: ") << float(temp / 10.0) << F(" ") << dec2binWzerofill(temp, 32) << endl;
-      Serial << F("Humidity: ") << hum << F(" ") << dec2binWzerofill(hum, 32) << endl;
-    }
-
-    for (int i = 0; i < nSensors; i++) {
-      if( sensor[i].sensorAddress == address ) {
-        sensor[i].currMoist = hum;
-        sensor[i].currTemp = float(temp/10.0);
-        sensor[i].lastSensorRead = millis();
-        sensor[i].print();
-      
-        delay(1000); // wait to drop duplicates/
-      }
-    }
-
-    // reattach
-    attachInterrupt(0, handler, CHANGE);
-    sensorReceived = false; // clear flag
-
+  if( !radio.rxAvailable() ) return;
+  
+  // get the message
+  unsigned long message = radio.rxMessage();
+  
+  for (int i = 0; i < nPumps; i++) {
+    // push the message to the Outlets; if any can be processed, clear the rxMessage.
+    if( sensor[i].readMessage(message) ) radio.rxClear();
   }
 }
 
@@ -411,12 +269,6 @@ void getTimeUpdate() {
 }
 
 
-void notePumpManualControl() {
-  for (int i = 0; i < nPumps; i++) {
-    pump[i].readOutlet();
-  }
-}
-
 void printSensors() {
   for ( int s = 0; s < nSensors; s++ ) sensor[s].print();
 }
@@ -424,7 +276,7 @@ void printSensors() {
 void pumpsAllOff() {
   Serial << F("Shutting down all pumps...") << endl;
   for (int p = 0; p < nPumps; p++ ) {
-    pump[p].turnOff();
+    radio.txMessage(pump[p].turnOff());
     delay(1000);
   }
 }

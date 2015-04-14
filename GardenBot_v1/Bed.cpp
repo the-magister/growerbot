@@ -1,6 +1,5 @@
 #include "Bed.h"
 
-extern RCSwitch radio;
 extern void printTime();
 
 // Find the three values for your switch by using the Advanced Receieve sketch
@@ -33,17 +32,6 @@ void BIOSDigitalSoilMeter::setMoistureTargets(byte minMoist, byte maxMoist) {
   this->maxMoist = maxMoist;
 }
 
-void BIOSDigitalSoilMeter::readSensor(unsigned long recv) {
-
-  if ( decodeAddress(recv) == this->sensorAddress ) {
-    Serial << F("Address matches ") << this->name << endl;
-    this->currMoist = decodeMoist(recv);
-    this->currTemp = decodeTemp(recv);
-    this->lastSensorRead = millis();
-    this->print();
-  }
-}
-
 boolean BIOSDigitalSoilMeter::tooDry() {
   return ( this->currMoist < this->minMoist );
 }
@@ -55,18 +43,39 @@ boolean BIOSDigitalSoilMeter::justRight() {
   return ( this->currMoist + 1 == this->maxMoist );
 }
 
+// parse the message
+boolean BIOSDigitalSoilMeter::readMessage(unsigned long recv) {
+
+  if ( decodeAddress(recv) == this->sensorAddress ) {
+    this->currMoist = decodeMoist(recv);
+    this->currTemp = decodeTemp(recv);
+    this->print();
+    return ( true );
+  } else {
+    return ( false );
+  }
+}
 // see http://rayshobby.net/reverse-engineer-a-cheap-wireless-soil-moisture-sensor/
 unsigned long BIOSDigitalSoilMeter::decodeAddress(unsigned long data) {
-  return ( getBits(data, 32, 8) );
+  return ( getBits(data, 32, 9) );
 }
 float BIOSDigitalSoilMeter::decodeTemp(unsigned long data) {
-  return ( float(getBits(data, 20, 12)) / 10.0 );
+  int temp = getBits(data, 20, 12);
+  // stored as an 12-bit number with 2's complement math for negative values 
+
+  // check for sign bit
+  if( bitRead(temp, 11) ) {
+    // if there is one, left-pad with 1's.
+    temp |= 0b1111000000000000;
+  }
+  
+  return ( float(temp) / 10.0 );
 }
 byte BIOSDigitalSoilMeter::decodeMoist(unsigned long data) {
   return ( getBits(data, 8, 4) );
 }
 
-void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offCode, int bitLength, int pulseLength, int protocol) {
+void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offCode) {
   // set name
   strcpy(this->name, name);
 
@@ -74,72 +83,53 @@ void EtekcityOutlet::begin(char * name, unsigned long onCode, unsigned long offC
   this->onCode = onCode;
   this->offCode = offCode;
 
-  // set protocol for transmission
-  this->bitLength = bitLength;
-  this->pulseLength = pulseLength;
-  this->protocol = protocol;
-
   // pump state
   this->isOn = false;
-  this->turnOff();
 
   // show it
   this->print();
 }
 
+boolean EtekcityOutlet::on() {
+  return( this->isOn );
+}
+
 // turn outlet on
-void EtekcityOutlet::turnOn() {
+unsigned long EtekcityOutlet::turnOn() {
   // only update onTime and print if there's a change
   if ( ! this->isOn ) {
     this->isOn = true;
-    this->onTime = millis();
     this->print();
   }
-  this->send(this->onCode);
+  
+ return( this->onCode );
 }
 
 // turn outlet off
-void EtekcityOutlet::turnOff() {
+unsigned long EtekcityOutlet::turnOff() {
   // only print if there's a change
   if ( this->isOn ) {
-    this -> isOn = false;
+    this->isOn = false;
     this->print();
   }
-  this->send(this->offCode);
+  return( this->offCode );
 }
 
-// handles transmission
-void EtekcityOutlet::send(unsigned long code) {
-  radio.setProtocol(this->protocol);        // protocol 1
-  radio.setPulseLength(this->pulseLength);   // 180 us pulse length
-  radio.send(code, this->bitLength);
-}
-
-void EtekcityOutlet::readOutlet() {
-  if (radio.available()) {
-    // pull radio data
-    unsigned long recv = radio.getReceivedValue();
-
-    if ( decodeAddress(recv) == this->onCode ) {
-      if ( !this->isOn ) {
-        this->isOn = true;
-        this->print();
-      }
-
-      this->lastOutletRead = millis();
-      radio.resetAvailable(); // clear radio buffer
+boolean EtekcityOutlet::readMessage(unsigned long recv) {
+  if ( decodeAddress(recv) == this->onCode ) {
+    if ( !this->isOn ) {
+      this->isOn = true;
+      this->print();
     }
-    else if ( decodeAddress(recv) == this->offCode ) {
-      if ( this->isOn ) {
-        this->isOn = false;
-        this->print();
-      }
-
-      this->lastOutletRead = millis();
-      radio.resetAvailable(); // clear radio buffer
+    return ( true );
+  } else if ( decodeAddress(recv) == this->offCode ) {
+    if ( this->isOn ) {
+      this->isOn = false;
+      this->print();
     }
+    return ( true );
   }
-
+  return ( false );
 }
 
 unsigned long EtekcityOutlet::decodeAddress(unsigned long data) {
@@ -156,7 +146,7 @@ void EtekcityOutlet::print() {
   Serial << endl;
 }
 
-// helper function
+// helper function; leading and trailing bits; bitshift right
 unsigned long getBits(unsigned long data, int startBit, int nBits) {
   const int dataLen = 32;
   return ( ( data << (dataLen - startBit) ) >> (dataLen - nBits) );

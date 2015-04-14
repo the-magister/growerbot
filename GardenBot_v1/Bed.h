@@ -2,69 +2,67 @@
 #define Bed_h
 
 #include <Arduino.h>
-
-#include <Streaming.h>
-#include <RCSwitch.h>
+#include <Streaming.h> // this needs to be #include'd in the .ino file, too.
 
 class BIOSDigitalSoilMeter {
   public:
     void begin(char name[], unsigned long sensorAddress, byte minMoist=6, byte maxMoist=11);
                
+    // accessor functions
+    // get current moisture
+    byte getMoist();
+    // get bed temperature
+    float getTemp();
+    // does the bed need to be watered?
+    boolean tooDry(); // currMoist < minMoist
+    boolean tooWet(); // currMoist > maxMoist
+    boolean justRight(); // currMoist == maxMoist+1
+
+    // look for sensor update in a received message
+    // if address matches, parse (set currMoist and currTemp), and return true
+    // if address doesn't match, return false.
+    boolean readMessage(unsigned long recv);
+ 
+    // sets targets    
     void setMoistureTargets(byte minMoist, byte maxMoist);
        
-    // store bed moisture readings
-    int currMoist;
-
-    // store bed temperature readings
-    float currTemp;
-
-    // look for sensor update and parse.  sets currMoist and currTemp.
-    void readSensor(unsigned long recv);
- 
-    // show sensor parameters
-    void print();
-    
-    // does the bed need to be watered?
-    boolean tooDry();
-    boolean tooWet();
-    boolean justRight();
-
     // store sensor name
     char name[20];
   
+    // show sensor parameters
+    void print();
+
+private:    
     // store the sensor address code
     unsigned long sensorAddress;
-
-    // stores last sensor update time
-    unsigned long lastSensorRead;
     
-private:    
+    // min target, max target, current moisture level. 0-3 (dry), 4-7 (damp), 8-11 (wet)
+    byte minMoist, maxMoist, currMoist;
     
-    // define moisture targets for each bed. 0-3 (dry), 4-7 (damp), 8-11 (wet)
-    byte minMoist;
-    byte maxMoist;
-
+    // current temperature
+    float currTemp;
+    
     // handles the sensor data packet
     unsigned long decodeAddress(unsigned long data);
     float decodeTemp(unsigned long data);
     byte decodeMoist(unsigned long data);
     
-
- };
+};
  
  class EtekcityOutlet {
    public:
-    void begin(char name[], unsigned long onCode, unsigned long offCode, int bitLength=24, int pulseLength=180, int protocol=1);
-               
-    // store current outlet state
-    boolean isOn;
+    void begin(char name[], unsigned long onCode, unsigned long offCode);
+              
+    // accessor functions 
+    // return current outlet state; true==on, false==off
+    boolean on();
 
-    // turn outlet on and off
-    void turnOn();
-    void turnOff();
+    // return message required to outlet on and off
+    unsigned long turnOn();
+    unsigned long turnOff();
 
-    // look for manual outlet control (to stay in sync).
-    void readOutlet();
+    // look for manual outlet control; if address matches, parse (sets on/off), and return true;
+    boolean readMessage(unsigned long recv);
     
     // show outlet parameters
     void print();
@@ -76,23 +74,14 @@ private:
 
     // store the outlet address codes
     unsigned long onCode, offCode;
-
-     // stores time outlet was turned on
-    unsigned long onTime;
     
+    // store the outlet state
+    boolean isOn;
+
     // handles the outlet data packet
     unsigned long decodeAddress(unsigned long data);
    
-    // stores the last time we got a manual outlet change signal
-    unsigned long lastOutletRead;
-    
-    // store bit length, pulse length and protocol for sending
-    int bitLength, pulseLength, protocol;
-    
-    // handles transmission
-    void send(unsigned long code);
-
- };
+};
 
 // helper functions
 unsigned long getBits(unsigned long data, int startBit, int nBits) ;
