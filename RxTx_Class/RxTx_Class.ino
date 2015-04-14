@@ -2,10 +2,6 @@
 #include <Metro.h>
 #include "Radio.h"
 
-#define RXPIN 2
-#define TXPIN 10
-
-Radio radio;
 
 Metro simulateTimer(1000UL);
 boolean doSimulation = true;
