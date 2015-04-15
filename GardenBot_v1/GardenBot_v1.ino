@@ -27,14 +27,17 @@ EtekcityOutlet pump[nPumps];
 // what pumps water which sensors?
 const boolean ps[nSensors] = {0, 0};
 
-// use LED to indicate status
-// solid: one or more sensors is reporting too dry
-// blinking: watering in progress
+// use LED to indicate status, with morse
+// "d": one or more sensors is reporting too dry
+// "w": watering in progress
 // SOS: a sensor is acting whacky
 #define LED 13
 
 // define a maximum watering time, in hours
 int maxWaterTime = 4; // hr
+
+// show radio messages.  useful for figuring out addresses.
+#define DEBUG_RADIO true
 
 void setup() {
   Serial.begin(115200);
@@ -48,9 +51,12 @@ void setup() {
   // RTC
   // I2C startup
   Wire.begin();
-  // Timers
   rtc.setClockMode(false); // 24 time.
-  rtc.setSecond(rtc.getSecond()); // maybe needed to clear power cycle flag?
+  rtc.enableOscillator(true, true, 0); // keep oscillator running on battery mode.
+  // maybe needed to clear power cycle flag?
+  if( !rtc.oscillatorCheck() )
+    rtc.setSecond(rtc.getSecond());
+  // Timers
   // 9pm. when hour, min, sec match.
   rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
   // check this
@@ -81,9 +87,9 @@ void setup() {
   Serial << F("Sensors:") << endl;
 //  sensor[0].begin("South Bed", 324, 6, 10);
 //  sensor[1].begin("West Bed", 868, 6, 10);
-  sensor[0].begin("South Bed", 320, 6, 10);
-  sensor[1].begin("West Bed", 864, 6, 10);
-  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
+  sensor[0].begin("South Bed", 910207744, 6, 10);
+  sensor[1].begin("West Bed", 339785730, 6, 10);
+//  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
 
   // pump and sensor relationships
   Serial << F("Pump waters Sensors:") << endl;
@@ -96,12 +102,18 @@ void setup() {
 }
 
 void loop() {
+
   // look for sensor data
   getSensorData();
 
   // look for pump data
   notePumpManualControl();
 
+  if( radio.rxAvailable() && DEBUG_RADIO ) {
+    Serial << F("Radio: ") << dec2binWzerofill(radio.rxMessage(), 32) << F("\t") << radio.rxMessage() << endl;
+    radio.rxClear();
+  }
+  
   // check for time update from Serial
   getTimeUpdate();
 
@@ -235,7 +247,7 @@ void getSensorData() {
   // get the message
   unsigned long message = radio.rxMessage();
   
-  for (int i = 0; i < nPumps; i++) {
+  for (int i = 0; i < nSensors; i++) {
     // push the message to the Outlets; if any can be processed, clear the rxMessage.
     if( sensor[i].readMessage(message) ) radio.rxClear();
   }

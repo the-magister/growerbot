@@ -11,7 +11,7 @@ void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte 
   // set name
   strcpy(this->name, name);
   // set sensor address
-  this->sensorAddress = sensorAddress;
+  this->sensorAddress = decodeAddress(sensorAddress);
   // set targets
   setMoistureTargets(minMoist, maxMoist);
   // at startup, set the current to not trigger alarms
