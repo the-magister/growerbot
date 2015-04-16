@@ -109,8 +109,13 @@ void loop() {
   // look for pump data
   notePumpManualControl();
 
+  // if we still can't process the message, print it,  probably just need to add it in the setup().  Drop decimel code in.
   if( radio.rxAvailable() && DEBUG_RADIO ) {
-    Serial << F("Radio: ") << dec2binWzerofill(radio.rxMessage(), 32) << F("\t") << radio.rxMessage() << endl;
+    Serial << F("Radio: unknown receipt.  Protocol: ") << radio.rxProtocol();
+    Serial << F(" Bit Length: ") << radio.rxBitLength();
+    Serial << F(" Message (dec): ") << radio.rxMessage();
+    Serial << F(" Message (bin): ") << dec2binWzerofill(radio.rxMessage(), 32);
+    Serial << endl;
     radio.rxClear();
   }
   
