@@ -52,10 +52,17 @@ void setup() {
   // I2C startup
   Wire.begin();
   rtc.setClockMode(false); // 24 time.
+  rtc.enable32kHz(false); // don't need 32kHz oscillator pin
   rtc.enableOscillator(true, true, 0); // keep oscillator running on battery mode.
   // maybe needed to clear power cycle flag?
-  if( !rtc.oscillatorCheck() )
+  if( !rtc.oscillatorCheck() ) {
+    Serial << F("RTC oscillator problem...") << endl;
     rtc.setSecond(rtc.getSecond());
+  }
+  Serial << F("RTC: Time=");
+  printTime();
+  Serial << endl;
+  
   // Timers
   // 9pm. when hour, min, sec match.
   rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
