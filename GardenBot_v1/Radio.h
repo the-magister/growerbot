@@ -28,6 +28,8 @@ Bits:
 // TB304BC = 0, ETEK = 1
 #define NPROT 2
 
+#define RADIO_SLOP 150 // packet length can be this percent off from protocol spec.
+
 #include <Arduino.h>
 #include <Streaming.h> // this needs to be #include'd in the .ino file, too.
 

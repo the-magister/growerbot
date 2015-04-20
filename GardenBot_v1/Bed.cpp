@@ -2,11 +2,6 @@
 
 extern void printTime();
 
-// Find the three values for your switch by using the Advanced Receieve sketch
-// Supplied with the RCSwitch library
-const int EtekcityOutletBitLength = 24;  // the pump bitlength is 24
-const int EtekcityOutletPulseLength = 180; // the pump pulse length in microseconds is 180
-
 void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte minMoist, byte maxMoist) {
   // set name
   strcpy(this->name, name);
@@ -50,6 +45,7 @@ boolean BIOSDigitalSoilMeter::readMessage(unsigned long recv) {
     this->currMoist = decodeMoist(recv);
     this->currTemp = decodeTemp(recv);
     this->print();
+    delay(DROP_REPEAT_DELAY);
     return ( true );
   } else {
     return ( false );
@@ -121,12 +117,14 @@ boolean EtekcityOutlet::readMessage(unsigned long recv) {
       this->isOn = true;
       this->print();
     }
+    delay(DROP_REPEAT_DELAY);
     return ( true );
   } else if ( decodeAddress(recv) == this->offCode ) {
     if ( this->isOn ) {
       this->isOn = false;
       this->print();
     }
+    delay(DROP_REPEAT_DELAY);
     return ( true );
   }
   return ( false );

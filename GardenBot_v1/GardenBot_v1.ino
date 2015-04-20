@@ -126,6 +126,16 @@ void loop() {
     radio.rxClear();
   }
   
+  /*
+  if( DEBUG_RADIO ) {
+    extern volatile unsigned long ISR_rxVal;
+    if( ISR_rxVal > 0b1000000000000000 ) {
+      Serial << F(" rxVal: (bin): ") << dec2binWzerofill(ISR_rxVal, 32) << endl;    
+      delay(50);
+    }
+  }
+  */
+  
   // check for time update from Serial
   getTimeUpdate();
 
@@ -270,6 +280,14 @@ void getTimeUpdate() {
   while (Serial.available() > 0) {
     // wait for everything to come in.
     delay(25);
+    // check for valid character
+    if( Serial.peek() <= '0' || Serial.peek() >= '9' ) {
+      // bad request.  
+      Serial << F("Bad time setting.  Format: hr, min, sec, day, month, year") << endl;
+      while ( Serial.read() > -1); // dump anything trailing.
+      return;
+    }
+    
     // look for the next valid integer in the incoming serial stream:
     int hr = Serial.parseInt();
     int mi = Serial.parseInt();
@@ -279,7 +297,7 @@ void getTimeUpdate() {
     int ye = Serial.parseInt();
     while ( Serial.read() > -1); // dump anything trailing.
 
-    Serial << F("Time update received. Format: hr, min, sec, day, month, year\\n") << endl;
+    Serial << F("Time update received. Format: hr, min, sec, day, month, year") << endl;
     rtc.setHour(constrain(hr, 0, 24));
     rtc.setMinute(constrain(mi, 0, 60));
     rtc.setSecond(constrain(se, 0, 60));

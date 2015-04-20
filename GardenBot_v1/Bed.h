@@ -1,6 +1,8 @@
 #ifndef Bed_h
 #define Bed_h
 
+#define DROP_REPEAT_DELAY 1000UL // messages are received with repeats.  If we get a good one, wait so we drop the extra.
+
 #include <Arduino.h>
 #include <Streaming.h> // this needs to be #include'd in the .ino file, too.
 
