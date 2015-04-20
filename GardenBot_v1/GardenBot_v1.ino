@@ -126,6 +126,16 @@ void loop() {
     radio.rxClear();
   }
   
+  /*
+  if( DEBUG_RADIO ) {
+    extern volatile unsigned long ISR_rxVal;
+    if( ISR_rxVal > 0b1000000000000000 ) {
+      Serial << F(" rxVal: (bin): ") << dec2binWzerofill(ISR_rxVal, 32) << endl;    
+      delay(50);
+    }
+  }
+  */
+  
   // check for time update from Serial
   getTimeUpdate();
 

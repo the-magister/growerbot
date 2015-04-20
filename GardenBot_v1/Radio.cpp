@@ -225,7 +225,7 @@ void interruptHandler() {
     if ( ! gotSync ) {
       //Serial << F("s");
       for ( byte p = 0; p < NPROT; p++ ) {
-        if ( isWithin(deltaTime, pulseLength[p]*syncSeq[p][1], 133) ) {
+        if ( isWithin(deltaTime, pulseLength[p]*syncSeq[p][1], RADIO_SLOP) ) {
           // that's a sync signal
           gotSync = true;
           ISR_rxProt = p; // store receiving protocol
@@ -238,13 +238,13 @@ void interruptHandler() {
       }
     } else {
       // we have a previous sync, so decode bit stream.
-      if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*oneSeq[ISR_rxProt][1], 133) ) {
+      if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*oneSeq[ISR_rxProt][1], RADIO_SLOP) ) {
         // Rx == 1
         rxCounts++;
         ISR_rxVal = (ISR_rxVal << 1) + 1; // bitshift current value up and add one at LSB
         //Serial << F("1");
 
-      } else if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*zeroSeq[ISR_rxProt][1], 133) ) {
+      } else if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*zeroSeq[ISR_rxProt][1], RADIO_SLOP) ) {
         // Rx == 0
         rxCounts++;
         ISR_rxVal = (ISR_rxVal << 1) + 0; // bitshift current value up and add zero at LSB
@@ -257,8 +257,8 @@ void interruptHandler() {
   } else if ( gotSync ) {
     // so, we're got a sync, but the pin has just gone LOW
     // let's use this time for some error checking, as we know how long the positive pulses are
-    if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*oneSeq[ISR_rxProt][0], 133) || // right pulse length to lead "one"
-         isWithin(deltaTime, pulseLength[ISR_rxProt]*zeroSeq[ISR_rxProt][0], 133) ) { // right pulse length to lead "zero"
+    if ( isWithin(deltaTime, pulseLength[ISR_rxProt]*oneSeq[ISR_rxProt][0], RADIO_SLOP) || // right pulse length to lead "one"
+         isWithin(deltaTime, pulseLength[ISR_rxProt]*zeroSeq[ISR_rxProt][0], RADIO_SLOP) ) { // right pulse length to lead "zero"
       // that's good.
     } else {
       // uh oh, we got nonsense.
