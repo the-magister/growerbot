@@ -110,6 +110,10 @@ void setup() {
   
   Serial << F("Turning pumps off.") << endl;
   pumpsAllOff();
+  
+  byte toss = rtc.getSecond();
+  boolean alarm = rtc.checkIfAlarm(1);
+  Serial << F("Clearing alarm flag.  Was ") << alarm << endl;
 
   Serial << F("Startup complete.") << endl;
 
