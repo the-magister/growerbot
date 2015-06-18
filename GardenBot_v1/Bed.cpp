@@ -10,7 +10,7 @@ void BIOSDigitalSoilMeter::begin(char * name, unsigned long sensorAddress, byte 
   // set targets
   setMoistureTargets(minMoist, maxMoist);
   // at startup, set the current to not trigger alarms
-  this->currMoist = maxMoist - 1;
+  this->currMoist = minMoist - 1;
 
   this->print();
 }

@@ -35,6 +35,7 @@ const boolean ps[nSensors] = {0, 0};
 
 // define a maximum watering time, in hours
 int maxWaterTime = 4; // hr
+Metro maxTimeReached(long(maxWaterTime) * 60UL * 60UL * 1000UL); // hr -> ms
 
 // show radio messages.  useful for figuring out addresses.
 #define DEBUG_RADIO true
@@ -55,17 +56,20 @@ void setup() {
   rtc.enable32kHz(false); // don't need 32kHz oscillator pin
   rtc.enableOscillator(true, true, 0); // keep oscillator running on battery mode.
   // maybe needed to clear power cycle flag?
-  if( !rtc.oscillatorCheck() ) {
+  if ( !rtc.oscillatorCheck() ) {
     Serial << F("RTC oscillator problem...") << endl;
     rtc.setSecond(rtc.getSecond());
   }
   Serial << F("RTC: Time=");
   printTime();
   Serial << endl;
-  
+
   // Timers
   // 9pm. when hour, min, sec match.
-  rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
+  // 0, hr, min, sec
+  //  rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
+  //  rtc.setA1Time(0, 18, 24, 0, B1000, true, false, false);
+  rtc.setA1Time(0, 18, 0, 0, B1000, true, false, false);
   // check this
   byte A1Day, A1Hour, A1Minute, A1Second, AlarmBits;
   bool A1Dy, A1h12, A1PM;
@@ -79,12 +83,12 @@ void setup() {
   radio.begin(RXPIN, TXPIN);
   radio.txRepeat(5); // 5 repeats
   radio.txProtocol(1); // always tranmitting using protocol 1 (ETek outlets)
-  
+
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 1381683, 1381692);
   radio.txMessage(pump[0].turnOff());
-  
+
   //  pump[1].begin("Pump 2", 1381827, 1381836);
   //  pump[2].begin("Pump 3", 1382147, 1382156);
   //  pump[3].begin("Pump 4", 1383683, 1383692);
@@ -92,17 +96,20 @@ void setup() {
 
   // sensors
   Serial << F("Sensors:") << endl;
-//  sensor[0].begin("South Bed", 324, 6, 10);
-//  sensor[1].begin("West Bed", 868, 6, 10);
-  sensor[0].begin("South Bed", 910207744, 6, 10);
-  sensor[1].begin("West Bed", 339785730, 6, 10);
-//  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
+  //  sensor[0].begin("South Bed", 324, 6, 10);
+  //  sensor[1].begin("West Bed", 868, 6, 10);
+  sensor[0].begin("South Bed", 910207744, 4, 7);
+  sensor[1].begin("West Bed", 339785730, 4, 7);
+  //  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
 
   // pump and sensor relationships
   Serial << F("Pump waters Sensors:") << endl;
   for ( int i = 0; i < nSensors; i++ ) {
     Serial << pump[ps[i]].name << F(" waters ") << sensor[i].name << endl;
   }
+  
+  Serial << F("Turning pumps off.") << endl;
+  pumpsAllOff();
 
   Serial << F("Startup complete.") << endl;
 
@@ -116,8 +123,15 @@ void loop() {
   // look for pump data
   notePumpManualControl();
 
+  if ( maxTimeReached.check() ) {
+    printTime();
+    Serial << F(": watering time interval.  Stopping any active pumps.") << endl;
+
+    pumpsAllOff();
+  }
+
   // if we still can't process the message, print it,  probably just need to add it in the setup().  Drop decimel code in.
-  if( radio.rxAvailable() && DEBUG_RADIO ) {
+  if ( radio.rxAvailable() && DEBUG_RADIO ) {
     Serial << F("Radio: unknown receipt.  Protocol: ") << radio.rxProtocol();
     Serial << F(" Bit Length: ") << radio.rxBitLength();
     Serial << F(" Message (dec): ") << radio.rxMessage();
@@ -125,17 +139,17 @@ void loop() {
     Serial << endl;
     radio.rxClear();
   }
-  
+
   /*
   if( DEBUG_RADIO ) {
     extern volatile unsigned long ISR_rxVal;
     if( ISR_rxVal > 0b1000000000000000 ) {
-      Serial << F(" rxVal: (bin): ") << dec2binWzerofill(ISR_rxVal, 32) << endl;    
+      Serial << F(" rxVal: (bin): ") << dec2binWzerofill(ISR_rxVal, 32) << endl;
       delay(50);
     }
   }
   */
-  
+
   // check for time update from Serial
   getTimeUpdate();
 
@@ -173,7 +187,6 @@ void wateringTime() {
 
   // track the start time for this cycle
   unsigned long now = millis();
-  Metro maxTimeReached(long(maxWaterTime) * 60UL * 60UL * 1000UL); // hr -> ms
   maxTimeReached.reset();
 
   // where are we?
@@ -190,7 +203,7 @@ void wateringTime() {
 
     // work through each pump
     for (int p = 0; p < nPumps; p++ ) {
-      
+
       boolean tooDry = false;
       boolean tooWet = false;
       boolean justRight = true;
@@ -252,26 +265,30 @@ void wateringTime() {
 }
 
 void notePumpManualControl() {
-  if( !radio.rxAvailable() ) return;
-  
+  if ( !radio.rxAvailable() ) return;
+
   // get the message
   unsigned long message = radio.rxMessage();
-  
+
   for (int i = 0; i < nPumps; i++) {
     // push the message to the Outlets; if any can be processed, clear the rxMessage.
-    if( pump[i].readMessage(message) ) radio.rxClear();
+    if ( pump[i].readMessage(message) ) {
+      radio.rxClear();
+      // reset the timer.
+      maxTimeReached.reset();
+    }
   }
 }
 
 void getSensorData() {
-  if( !radio.rxAvailable() ) return;
-  
+  if ( !radio.rxAvailable() ) return;
+
   // get the message
   unsigned long message = radio.rxMessage();
-  
+
   for (int i = 0; i < nSensors; i++) {
     // push the message to the Outlets; if any can be processed, clear the rxMessage.
-    if( sensor[i].readMessage(message) ) radio.rxClear();
+    if ( sensor[i].readMessage(message) ) radio.rxClear();
   }
 }
 
@@ -281,13 +298,13 @@ void getTimeUpdate() {
     // wait for everything to come in.
     delay(25);
     // check for valid character
-    if( Serial.peek() <= '0' || Serial.peek() >= '9' ) {
-      // bad request.  
+    if ( Serial.peek() <= '0' || Serial.peek() >= '9' ) {
+      // bad request.
       Serial << F("Bad time setting.  Format: hr, min, sec, day, month, year") << endl;
       while ( Serial.read() > -1); // dump anything trailing.
       return;
     }
-    
+
     // look for the next valid integer in the incoming serial stream:
     int hr = Serial.parseInt();
     int mi = Serial.parseInt();
