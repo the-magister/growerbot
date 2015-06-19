@@ -34,8 +34,8 @@ const boolean ps[nSensors] = {0, 0};
 #define LED 13
 
 // define a maximum watering time, in hours
-int maxWaterTime = 4; // hr
-Metro maxTimeReached(long(maxWaterTime) * 60UL * 60UL * 1000UL); // hr -> ms
+unsigned long maxWaterTime = 4; // hr
+Metro maxTimeReached(maxWaterTime * 60UL * 60UL * 1000UL); // hr -> ms
 
 // show radio messages.  useful for figuring out addresses.
 #define DEBUG_RADIO true
@@ -98,8 +98,8 @@ void setup() {
   Serial << F("Sensors:") << endl;
   //  sensor[0].begin("South Bed", 324, 6, 10);
   //  sensor[1].begin("West Bed", 868, 6, 10);
-  sensor[0].begin("South Bed", 910207744, 4, 7);
-  sensor[1].begin("West Bed", 339785730, 4, 7);
+  sensor[0].begin("South Bed", 910207744, 3, 5);
+  sensor[1].begin("West Bed", 339785730, 3, 5);
   //  sensor[2].begin("Flower Bed", 1949, 4, 8);   // try to keep this bed drier
 
   // pump and sensor relationships
@@ -200,7 +200,7 @@ void wateringTime() {
   while ( keepWatering ) {
     // watch the radio
     getSensorData();
-    notePumpManualControl();
+    boolean manualControl = notePumpManualControl();
 
     // indicate watering cycle
     ledWatering();
@@ -247,6 +247,12 @@ void wateringTime() {
       pumpsAllOff();
       keepWatering = false;
     }
+    
+    if( manualControl ) {
+      Serial << F("Noted manual control.  Shutting down...") << endl;
+      pumpsAllOff();
+      keepWatering = false;
+    } 
   }
 
   // just in case
@@ -268,8 +274,8 @@ void wateringTime() {
 
 }
 
-void notePumpManualControl() {
-  if ( !radio.rxAvailable() ) return;
+boolean notePumpManualControl() {
+  if ( !radio.rxAvailable() ) return( false );
 
   // get the message
   unsigned long message = radio.rxMessage();
@@ -277,11 +283,14 @@ void notePumpManualControl() {
   for (int i = 0; i < nPumps; i++) {
     // push the message to the Outlets; if any can be processed, clear the rxMessage.
     if ( pump[i].readMessage(message) ) {
+      // clear message
       radio.rxClear();
-      // reset the timer.
-      maxTimeReached.reset();
+      // return
+      return( true );
     }
   }
+  
+  return( false );
 }
 
 void getSensorData() {
