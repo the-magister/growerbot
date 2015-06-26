@@ -68,8 +68,8 @@ void setup() {
   // 9pm. when hour, min, sec match.
   // 0, hr, min, sec
   //  rtc.setA1Time(0, 21, 0, 0, B1000, true, false, false);
-  //  rtc.setA1Time(0, 18, 24, 0, B1000, true, false, false);
-  rtc.setA1Time(0, 18, 0, 0, B1000, true, false, false);
+  rtc.setA1Time(0, 17, 45, 0, B1000, true, false, false);
+  //rtc.setA1Time(0, 18, 0, 0, B1000, true, false, false);
   // check this
   byte A1Day, A1Hour, A1Minute, A1Second, AlarmBits;
   bool A1Dy, A1h12, A1PM;
@@ -87,7 +87,6 @@ void setup() {
   // pumps
   Serial << F("Pumps:") << endl;
   pump[0].begin("Pump 1", 1381683, 1381692);
-  radio.txMessage(pump[0].turnOff());
 
   //  pump[1].begin("Pump 2", 1381827, 1381836);
   //  pump[2].begin("Pump 3", 1382147, 1382156);
@@ -111,6 +110,9 @@ void setup() {
   Serial << F("Turning pumps off.") << endl;
   pumpsAllOff();
   
+  // clear message
+  radio.rxClear();  
+  
   byte toss = rtc.getSecond();
   boolean alarm = rtc.checkIfAlarm(1);
   Serial << F("Clearing alarm flag.  Was ") << alarm << endl;
@@ -124,8 +126,22 @@ void loop() {
   // look for sensor data
   getSensorData();
 
-  // look for pump data
-  notePumpManualControl();
+  // look for pump manual control
+  if( notePumpManualControl() ) {
+    printTime();
+    Serial << F(": manual control noted.") << endl;
+    for (int p = 0; p < nPumps; p++ ) {
+      if( pump[p].on() ) {
+        printTime();
+        Serial << F(": Will shut down in ") << maxWaterTime << F(" h.") << endl;
+        // if we have one, plan on shutting down later.
+        maxTimeReached.reset();
+      } else {
+        printTime();
+        Serial << F(": pump ") << p << F(" off.") << endl;
+      }
+    }
+  }
 
   if ( maxTimeReached.check() ) {
     printTime();
@@ -229,7 +245,7 @@ void wateringTime() {
       //      if ( tooWet || !tooDry ) {
       if ( tooWet || justRight ) {
         //        Serial << "too wet or not too dry" << endl;
-        radio.txMessage(pump[0].turnOff());
+        radio.txMessage(pump[p].turnOff());
       } else if ( tooDry ) {
         //       Serial << "too dry" << endl;
         radio.txMessage(pump[p].turnOn());

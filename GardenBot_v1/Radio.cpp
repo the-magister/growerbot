@@ -146,6 +146,8 @@ void Radio::txMessage(unsigned long val) {
   for ( int i = 0; i < this->txRepeats; i++ ) {
     Radio::sendValue(this->txProt, val);
   }
+  delay(250);
+  this->rxClear(); // make sure Rx buffer is cleared so we don't listen to ourself.
 }
 
 // Tx random noise.  Useful for simulation.
@@ -157,7 +159,7 @@ void Radio::txNoise(int n) {
 }
 
 // send a message
-void Radio::sendValue(int prot, unsigned long val) {
+void Radio::sendValue(int prot, unsigned long val) {  
 //  Serial << F("sendValue: prot=") << prot << F(" value=") << val << F(" bitLength=") << messageLength[prot] << endl;
   // send sync
   sendSeq(prot, syncSeq);
