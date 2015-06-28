@@ -34,7 +34,7 @@ const boolean ps[nSensors] = {0, 0};
 #define LED 13
 
 // define a maximum watering time, in hours
-unsigned long maxWaterTime = 4; // hr
+unsigned long maxWaterTime = 6; // hr
 Metro maxTimeReached(maxWaterTime * 60UL * 60UL * 1000UL); // hr -> ms
 
 // show radio messages.  useful for figuring out addresses.
