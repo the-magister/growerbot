@@ -327,7 +327,7 @@ void getTimeUpdate() {
     // wait for everything to come in.
     delay(25);
     // check for valid character
-    if ( Serial.peek() <= '0' || Serial.peek() >= '9' ) {
+    if ( Serial.peek() < '0' || Serial.peek() > '9' ) {
       // bad request.
       Serial << F("Bad time setting.  Format: hr, min, sec, day, month, year") << endl;
       while ( Serial.read() > -1); // dump anything trailing.
